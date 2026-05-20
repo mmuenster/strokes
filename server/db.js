@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DB_PATH = join(__dirname, 'strokes.db');
+const DB_PATH = process.env.DB_PATH || join(__dirname, 'strokes.db');
 
 const SQL = await initSqlJs();
 
