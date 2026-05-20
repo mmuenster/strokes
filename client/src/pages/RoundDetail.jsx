@@ -78,6 +78,43 @@ export default function RoundDetail() {
     });
   }
 
+  async function handleShotEdited(updatedShot) {
+    // Capture current state before update to detect end-position changes
+    const hole = round.holes.find((h) => h.id === updatedShot.hole_id);
+    const originalShot = hole?.shots.find((s) => s.id === updatedShot.id);
+    const nextShot = hole?.shots.find((s) => s.sequence === updatedShot.sequence + 1);
+
+    // Update the edited shot in state
+    setRound((r) => {
+      const holes = r.holes.map((h) => {
+        if (h.id !== updatedShot.hole_id) return h;
+        return { ...h, shots: h.shots.map((s) => s.id === updatedShot.id ? updatedShot : s) };
+      });
+      return { ...r, holes, sg: computeSGTotals(holes.flatMap((h) => h.shots || [])) };
+    });
+
+    // Cascade: if end position changed and there is a following shot, update its start
+    const endChanged =
+      !updatedShot.holed &&
+      nextShot &&
+      (originalShot?.dist_end !== updatedShot.dist_end ||
+        originalShot?.lie_end !== updatedShot.lie_end);
+
+    if (endChanged) {
+      const cascaded = await api.shots.update(nextShot.id, {
+        dist_start: updatedShot.dist_end,
+        lie_start: updatedShot.lie_end,
+      });
+      setRound((r) => {
+        const holes = r.holes.map((h) => {
+          if (h.id !== cascaded.hole_id) return h;
+          return { ...h, shots: h.shots.map((s) => s.id === cascaded.id ? cascaded : s) };
+        });
+        return { ...r, holes, sg: computeSGTotals(holes.flatMap((h) => h.shots || [])) };
+      });
+    }
+  }
+
   if (loading) return <div className="text-center py-20 text-gray-400">Loading…</div>;
   if (error) return <div className="text-center py-20 text-red-500">{error}</div>;
   if (!round) return null;
@@ -148,7 +185,9 @@ export default function RoundDetail() {
 
               <ShotList
                 shots={activeHole.shots ?? []}
+                hole={activeHole}
                 onDeleted={handleShotDeleted}
+                onEdited={handleShotEdited}
               />
 
               <ShotForm
