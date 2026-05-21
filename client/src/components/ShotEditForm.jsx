@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import { END_LIES, LIE_LABELS, CAT_COLORS, isPuttLie, feetToYards, fmtDist } from '../utils.js';
 
@@ -41,16 +41,6 @@ export default function ShotEditForm({ shot, hole, isFirstShot, onSaved, onCance
       setLieEnd(lie);
     }
   }
-
-  // Clear ending distance when switching between putt (feet) and non-putt (yards)
-  const prevIsPuttEnd = useRef(isPuttLie(shot.lie_end ?? ''));
-  useEffect(() => {
-    const now = isPuttLie(lieEnd);
-    if (now !== prevIsPuttEnd.current) {
-      setDistEndRaw('');
-      prevIsPuttEnd.current = now;
-    }
-  }, [lieEnd]);
 
   const distStartYards = isPuttLie(lieStart) ? feetToYards(distStartRaw) : Number(distStartRaw);
   const distEndYards = isPuttLie(lieEnd) ? feetToYards(distEndRaw) : Number(distEndRaw);
