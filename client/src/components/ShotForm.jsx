@@ -32,7 +32,16 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
 
   const isHoled = lieEnd === 'HOLED';
 
-  // Reset result fields when previousShot changes (new shot ready to enter)
+  // Reset all fields when switching holes
+  useEffect(() => {
+    setDistStartRaw(!previousShot && hole.yardage ? String(hole.yardage) : '');
+    setDistEndRaw('');
+    setLieEnd(defaultEndLie(previousShot));
+    setError(null);
+    setLastSaved(null);
+  }, [hole.id]);
+
+  // Reset result fields when a new shot is ready on the same hole
   useEffect(() => {
     setDistEndRaw('');
     setLieEnd(defaultEndLie(previousShot));
