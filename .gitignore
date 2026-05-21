@@ -4,3 +4,4 @@ server/strokes.db
 *.log
 .DS_Store
 .gstack/
+.env
