@@ -1,25 +1,25 @@
 import { Router } from 'express';
-import db from '../db.js';
+import { query, queryOne } from '../db.js';
 
 const router = Router({ mergeParams: true });
 
 // GET /api/rounds/:roundId/holes
-router.get('/', (req, res) => {
-  const holes = db.prepare(`
+router.get('/', async (req, res) => {
+  const holes = await query(`
     SELECT h.*, COUNT(s.id) AS shot_count,
       COALESCE(SUM(s.sg), 0) AS sg_total
     FROM holes h
     LEFT JOIN shots s ON s.hole_id = h.id
-    WHERE h.round_id = ?
+    WHERE h.round_id = $1
     GROUP BY h.id
     ORDER BY h.number
-  `).all(req.params.roundId);
+  `, [req.params.roundId]);
   res.json(holes);
 });
 
 // POST /api/rounds/:roundId/holes
-router.post('/', (req, res) => {
-  const round = db.prepare('SELECT * FROM rounds WHERE id = ?').get(req.params.roundId);
+router.post('/', async (req, res) => {
+  const round = await queryOne('SELECT * FROM rounds WHERE id = $1', [req.params.roundId]);
   if (!round) return res.status(404).json({ error: 'Round not found' });
 
   const { number, par, yardage } = req.body;
@@ -27,37 +27,38 @@ router.post('/', (req, res) => {
   if (!par || ![3, 4, 5].includes(Number(par))) return res.status(400).json({ error: 'par must be 3, 4, or 5' });
 
   try {
-    const { lastInsertRowid } = db.prepare(
-      'INSERT INTO holes (round_id, number, par, yardage) VALUES (?, ?, ?, ?)'
-    ).run(round.id, Number(number), Number(par), yardage ? Number(yardage) : null);
-    const hole = db.prepare('SELECT * FROM holes WHERE id = ?').get(lastInsertRowid);
+    const hole = await queryOne(
+      'INSERT INTO holes (round_id, number, par, yardage) VALUES ($1, $2, $3, $4) RETURNING *',
+      [round.id, Number(number), Number(par), yardage ? Number(yardage) : null]
+    );
     hole.shots = [];
     res.status(201).json(hole);
   } catch (e) {
-    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: `Hole ${number} already exists` });
+    if (e.code === '23505') return res.status(409).json({ error: `Hole ${number} already exists` });
     throw e;
   }
 });
 
 // PUT /api/holes/:id
-router.put('/:id', (req, res) => {
-  const hole = db.prepare('SELECT * FROM holes WHERE id = ?').get(req.params.id);
+router.put('/:id', async (req, res) => {
+  const hole = await queryOne('SELECT * FROM holes WHERE id = $1', [req.params.id]);
   if (!hole) return res.status(404).json({ error: 'Hole not found' });
 
   const { par, yardage } = req.body;
   if (par && ![3, 4, 5].includes(Number(par))) return res.status(400).json({ error: 'par must be 3, 4, or 5' });
 
-  db.prepare('UPDATE holes SET par = COALESCE(?, par), yardage = COALESCE(?, yardage) WHERE id = ?')
-    .run(par ? Number(par) : null, yardage != null ? Number(yardage) : null, hole.id);
-
-  res.json(db.prepare('SELECT * FROM holes WHERE id = ?').get(hole.id));
+  const updated = await queryOne(
+    'UPDATE holes SET par = COALESCE($1, par), yardage = COALESCE($2, yardage) WHERE id = $3 RETURNING *',
+    [par ? Number(par) : null, yardage != null ? Number(yardage) : null, hole.id]
+  );
+  res.json(updated);
 });
 
 // DELETE /api/holes/:id
-router.delete('/:id', (req, res) => {
-  const hole = db.prepare('SELECT * FROM holes WHERE id = ?').get(req.params.id);
+router.delete('/:id', async (req, res) => {
+  const hole = await queryOne('SELECT * FROM holes WHERE id = $1', [req.params.id]);
   if (!hole) return res.status(404).json({ error: 'Hole not found' });
-  db.prepare('DELETE FROM holes WHERE id = ?').run(hole.id);
+  await query('DELETE FROM holes WHERE id = $1', [hole.id]);
   res.status(204).end();
 });
 

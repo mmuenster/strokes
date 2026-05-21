@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import db from '../db.js';
+import { query, queryOne } from '../db.js';
 
 const router = Router();
 
 // GET /api/rounds — list all rounds with SG aggregates
-router.get('/', (req, res) => {
-  const rounds = db.prepare(`
+router.get('/', async (req, res) => {
+  const rounds = await query(`
     SELECT r.*,
       COALESCE(SUM(CASE WHEN s.category='OTT'  THEN s.sg END), 0) AS sg_ott,
       COALESCE(SUM(CASE WHEN s.category='APP'  THEN s.sg END), 0) AS sg_app,
@@ -18,21 +18,21 @@ router.get('/', (req, res) => {
     LEFT JOIN shots s ON s.hole_id = h.id
     GROUP BY r.id
     ORDER BY r.date DESC, r.created_at DESC
-  `).all();
+  `);
   res.json(rounds);
 });
 
 // GET /api/rounds/:id — round detail with holes and shots
-router.get('/:id', (req, res) => {
-  const round = db.prepare('SELECT * FROM rounds WHERE id = ?').get(req.params.id);
+router.get('/:id', async (req, res) => {
+  const round = await queryOne('SELECT * FROM rounds WHERE id = $1', [req.params.id]);
   if (!round) return res.status(404).json({ error: 'Round not found' });
 
-  const holes = db.prepare('SELECT * FROM holes WHERE round_id = ? ORDER BY number').all(round.id);
+  const holes = await query('SELECT * FROM holes WHERE round_id = $1 ORDER BY number', [round.id]);
   for (const hole of holes) {
-    hole.shots = db.prepare('SELECT * FROM shots WHERE hole_id = ? ORDER BY sequence').all(hole.id);
+    hole.shots = await query('SELECT * FROM shots WHERE hole_id = $1 ORDER BY sequence', [hole.id]);
   }
 
-  const sg = db.prepare(`
+  const sg = await queryOne(`
     SELECT
       COALESCE(SUM(CASE WHEN s.category='OTT'  THEN s.sg END), 0) AS ott,
       COALESCE(SUM(CASE WHEN s.category='APP'  THEN s.sg END), 0) AS app,
@@ -41,51 +41,52 @@ router.get('/:id', (req, res) => {
       COALESCE(SUM(s.sg), 0)                                       AS total
     FROM shots s
     JOIN holes h ON h.id = s.hole_id
-    WHERE h.round_id = ?
-  `).get(round.id);
+    WHERE h.round_id = $1
+  `, [round.id]);
 
   res.json({ ...round, holes, sg });
 });
 
 // POST /api/rounds
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { course_name, date, notes = '', profile = 'scratch' } = req.body;
   if (!course_name?.trim()) return res.status(400).json({ error: 'course_name required' });
   if (!date) return res.status(400).json({ error: 'date required' });
   if (!['scratch', 'hdcp15'].includes(profile)) return res.status(400).json({ error: 'invalid profile' });
 
-  const { lastInsertRowid } = db.prepare(
-    'INSERT INTO rounds (course_name, date, notes, profile) VALUES (?, ?, ?, ?)'
-  ).run(course_name.trim(), date, notes, profile);
-
-  res.status(201).json(db.prepare('SELECT * FROM rounds WHERE id = ?').get(lastInsertRowid));
+  const round = await queryOne(
+    'INSERT INTO rounds (course_name, date, notes, profile) VALUES ($1, $2, $3, $4) RETURNING *',
+    [course_name.trim(), date, notes, profile]
+  );
+  res.status(201).json(round);
 });
 
 // PUT /api/rounds/:id
-router.put('/:id', (req, res) => {
-  const round = db.prepare('SELECT * FROM rounds WHERE id = ?').get(req.params.id);
+router.put('/:id', async (req, res) => {
+  const round = await queryOne('SELECT * FROM rounds WHERE id = $1', [req.params.id]);
   if (!round) return res.status(404).json({ error: 'Round not found' });
 
   const { course_name, date, notes, profile } = req.body;
   if (profile && !['scratch', 'hdcp15'].includes(profile)) return res.status(400).json({ error: 'invalid profile' });
 
-  db.prepare(`
+  const updated = await queryOne(`
     UPDATE rounds SET
-      course_name = COALESCE(?, course_name),
-      date        = COALESCE(?, date),
-      notes       = COALESCE(?, notes),
-      profile     = COALESCE(?, profile)
-    WHERE id = ?
-  `).run(course_name ?? null, date ?? null, notes ?? null, profile ?? null, round.id);
+      course_name = COALESCE($1, course_name),
+      date        = COALESCE($2, date),
+      notes       = COALESCE($3, notes),
+      profile     = COALESCE($4, profile)
+    WHERE id = $5
+    RETURNING *
+  `, [course_name ?? null, date ?? null, notes ?? null, profile ?? null, round.id]);
 
-  res.json(db.prepare('SELECT * FROM rounds WHERE id = ?').get(round.id));
+  res.json(updated);
 });
 
 // DELETE /api/rounds/:id
-router.delete('/:id', (req, res) => {
-  const round = db.prepare('SELECT * FROM rounds WHERE id = ?').get(req.params.id);
+router.delete('/:id', async (req, res) => {
+  const round = await queryOne('SELECT * FROM rounds WHERE id = $1', [req.params.id]);
   if (!round) return res.status(404).json({ error: 'Round not found' });
-  db.prepare('DELETE FROM rounds WHERE id = ?').run(round.id);
+  await query('DELETE FROM rounds WHERE id = $1', [round.id]);
   res.status(204).end();
 });
 

@@ -1,30 +1,31 @@
 import { Router } from 'express';
-import db from '../db.js';
+import { query, queryOne } from '../db.js';
 import { autoCategory, computeSG } from '../sg.js';
 import { validateDistance } from '../baseline.js';
 
 const router = Router({ mergeParams: true });
 
-function getRoundProfile(holeId) {
-  const result = db.prepare(`
+async function getRoundProfile(holeId) {
+  const result = await queryOne(`
     SELECT r.profile FROM rounds r
     JOIN holes h ON h.round_id = r.id
-    WHERE h.id = ?
-  `).get(holeId);
+    WHERE h.id = $1
+  `, [holeId]);
   return result?.profile ?? 'scratch';
 }
 
 // GET /api/holes/:holeId/shots
-router.get('/', (req, res) => {
-  const shots = db.prepare(
-    'SELECT * FROM shots WHERE hole_id = ? ORDER BY sequence'
-  ).all(req.params.holeId);
+router.get('/', async (req, res) => {
+  const shots = await query(
+    'SELECT * FROM shots WHERE hole_id = $1 ORDER BY sequence',
+    [req.params.holeId]
+  );
   res.json(shots);
 });
 
 // POST /api/holes/:holeId/shots
-router.post('/', (req, res) => {
-  const hole = db.prepare('SELECT * FROM holes WHERE id = ?').get(req.params.holeId);
+router.post('/', async (req, res) => {
+  const hole = await queryOne('SELECT * FROM holes WHERE id = $1', [req.params.holeId]);
   if (!hole) return res.status(404).json({ error: 'Hole not found' });
 
   let { sequence, dist_start, lie_start, dist_end, lie_end, holed = 0, category } = req.body;
@@ -42,13 +43,11 @@ router.post('/', (req, res) => {
   if (!LIES.includes(lie_start)) return res.status(400).json({ error: 'invalid lie_start' });
   if (!holed && !LIES.includes(lie_end)) return res.status(400).json({ error: 'invalid lie_end' });
 
-  // Auto-assign sequence if not provided
   if (!sequence) {
-    const last = db.prepare('SELECT MAX(sequence) AS max FROM shots WHERE hole_id = ?').get(hole.id);
+    const last = await queryOne('SELECT MAX(sequence) AS max FROM shots WHERE hole_id = $1', [hole.id]);
     sequence = (last?.max ?? 0) + 1;
   }
 
-  // Auto-categorize if not provided
   if (!category) {
     category = autoCategory(sequence, lie_start, Number(dist_start), hole.par);
   }
@@ -56,7 +55,7 @@ router.post('/', (req, res) => {
   const CATS = ['OTT','APP','ARG','PUTT','PENALTY'];
   if (!CATS.includes(category)) return res.status(400).json({ error: 'invalid category' });
 
-  const profile = getRoundProfile(hole.id);
+  const profile = await getRoundProfile(hole.id);
   const sg = computeSG(
     Number(dist_start), lie_start,
     holed ? 0 : Number(dist_end), holed ? 'GREEN' : lie_end,
@@ -64,26 +63,27 @@ router.post('/', (req, res) => {
   );
 
   try {
-    const { lastInsertRowid } = db.prepare(`
+    const shot = await queryOne(`
       INSERT INTO shots (hole_id, sequence, category, dist_start, lie_start, dist_end, lie_end, holed, sg)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING *
+    `, [
       hole.id, sequence, category,
       Number(dist_start), lie_start,
       holed ? null : Number(dist_end),
       holed ? null : lie_end,
-      holed, sg
-    );
-    res.status(201).json(db.prepare('SELECT * FROM shots WHERE id = ?').get(lastInsertRowid));
+      holed, sg,
+    ]);
+    res.status(201).json(shot);
   } catch (e) {
-    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: `Shot ${sequence} already exists` });
+    if (e.code === '23505') return res.status(409).json({ error: `Shot ${sequence} already exists` });
     throw e;
   }
 });
 
 // PUT /api/shots/:id
-router.put('/:id', (req, res) => {
-  const shot = db.prepare('SELECT * FROM shots WHERE id = ?').get(req.params.id);
+router.put('/:id', async (req, res) => {
+  const shot = await queryOne('SELECT * FROM shots WHERE id = $1', [req.params.id]);
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
 
   let { dist_start, lie_start, dist_end, lie_end, holed, category } = req.body;
@@ -97,33 +97,34 @@ router.put('/:id', (req, res) => {
   if (!validateDistance(newDistStart)) return res.status(400).json({ error: 'invalid dist_start' });
   if (!holed && !validateDistance(newDistEnd)) return res.status(400).json({ error: 'invalid dist_end' });
 
-  const profile = getRoundProfile(shot.hole_id);
+  const profile = await getRoundProfile(shot.hole_id);
   const sg = computeSG(newDistStart, newLieStart, holed ? 0 : newDistEnd, holed ? 'GREEN' : newLieEnd, holed, profile);
 
-  const hole = db.prepare('SELECT * FROM holes WHERE id = ?').get(shot.hole_id);
+  const hole = await queryOne('SELECT * FROM holes WHERE id = $1', [shot.hole_id]);
   const newCategory = category ?? autoCategory(shot.sequence, newLieStart, newDistStart, hole.par);
 
-  db.prepare(`
+  const updated = await queryOne(`
     UPDATE shots SET
-      dist_start = ?, lie_start = ?,
-      dist_end   = ?, lie_end   = ?,
-      holed = ?, category = ?, sg = ?
-    WHERE id = ?
-  `).run(
+      dist_start = $1, lie_start = $2,
+      dist_end   = $3, lie_end   = $4,
+      holed = $5, category = $6, sg = $7
+    WHERE id = $8
+    RETURNING *
+  `, [
     newDistStart, newLieStart,
     holed ? null : newDistEnd,
     holed ? null : newLieEnd,
-    holed, newCategory, sg, shot.id
-  );
+    holed, newCategory, sg, shot.id,
+  ]);
 
-  res.json(db.prepare('SELECT * FROM shots WHERE id = ?').get(shot.id));
+  res.json(updated);
 });
 
 // DELETE /api/shots/:id
-router.delete('/:id', (req, res) => {
-  const shot = db.prepare('SELECT * FROM shots WHERE id = ?').get(req.params.id);
+router.delete('/:id', async (req, res) => {
+  const shot = await queryOne('SELECT * FROM shots WHERE id = $1', [req.params.id]);
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
-  db.prepare('DELETE FROM shots WHERE id = ?').run(shot.id);
+  await query('DELETE FROM shots WHERE id = $1', [shot.id]);
   res.status(204).end();
 });
 
