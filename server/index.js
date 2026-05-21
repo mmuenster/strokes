@@ -5,6 +5,7 @@ import path from 'path';
 import roundsRouter from './routes/rounds.js';
 import holesRouter from './routes/holes.js';
 import shotsRouter from './routes/shots.js';
+import coursesRouter from './routes/courses.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -16,6 +17,7 @@ if (!isProd) {
 }
 app.use(express.json());
 
+app.use('/api/courses', coursesRouter);
 app.use('/api/rounds', roundsRouter);
 app.use('/api/rounds/:roundId/holes', holesRouter);
 app.use('/api/holes/:holeId/shots', shotsRouter);

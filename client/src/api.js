@@ -13,6 +13,10 @@ async function req(method, path, body) {
 }
 
 export const api = {
+  courses: {
+    list: () => req('GET', '/courses'),
+    get: (id) => req('GET', `/courses/${id}`),
+  },
   rounds: {
     list: () => req('GET', '/rounds'),
     get: (id) => req('GET', `/rounds/${id}`),

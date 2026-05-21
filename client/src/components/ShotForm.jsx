@@ -19,7 +19,9 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
   const nextSeq = previousShot ? previousShot.sequence + 1 : 1;
 
   const [lieStart] = useState('TEE');
-  const [distStartRaw, setDistStartRaw] = useState('');
+  const [distStartRaw, setDistStartRaw] = useState(() =>
+    !previousShot && hole.yardage ? String(hole.yardage) : ''
+  );
 
   // 'HOLED' is a UI-only pseudo-lie that means the shot was holed out
   const [lieEnd, setLieEnd] = useState(() => defaultEndLie(previousShot));

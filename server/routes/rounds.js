@@ -49,7 +49,7 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/rounds
 router.post('/', async (req, res) => {
-  const { course_name, date, notes = '', profile = 'scratch' } = req.body;
+  const { course_name, date, notes = '', profile = 'scratch', course_tee_id } = req.body;
   if (!course_name?.trim()) return res.status(400).json({ error: 'course_name required' });
   if (!date) return res.status(400).json({ error: 'date required' });
   if (!['scratch', 'hdcp15'].includes(profile)) return res.status(400).json({ error: 'invalid profile' });
@@ -58,6 +58,20 @@ router.post('/', async (req, res) => {
     'INSERT INTO rounds (course_name, date, notes, profile) VALUES ($1, $2, $3, $4) RETURNING *',
     [course_name.trim(), date, notes, profile]
   );
+
+  if (course_tee_id) {
+    const courseHoles = await query(
+      'SELECT * FROM course_holes WHERE tee_id = $1 ORDER BY number',
+      [course_tee_id]
+    );
+    for (const ch of courseHoles) {
+      await query(
+        'INSERT INTO holes (round_id, number, par, yardage) VALUES ($1, $2, $3, $4)',
+        [round.id, ch.number, ch.par, ch.yardage]
+      );
+    }
+  }
+
   res.status(201).json(round);
 });
 

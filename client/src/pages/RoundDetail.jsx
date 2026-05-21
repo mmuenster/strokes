@@ -22,7 +22,12 @@ export default function RoundDetail() {
       const r = await api.rounds.get(id);
       setRound(r);
       if (!activeHoleId && r.holes.length > 0) {
-        setActiveHoleId(r.holes[r.holes.length - 1].id);
+        // Default to last hole with shots, or hole 1 if no shots entered yet
+        const holesWithShots = r.holes.filter((h) => h.shots?.length > 0);
+        const target = holesWithShots.length > 0
+          ? holesWithShots[holesWithShots.length - 1]
+          : r.holes[0];
+        setActiveHoleId(target.id);
       }
     } catch (e) {
       setError(e.message);
