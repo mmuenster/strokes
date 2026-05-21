@@ -40,17 +40,44 @@ function open() {
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       hole_id     INTEGER NOT NULL REFERENCES holes(id) ON DELETE CASCADE,
       sequence    INTEGER NOT NULL,
-      category    TEXT    NOT NULL CHECK(category IN ('OTT','APP','ARG','PUTT')),
+      category    TEXT    NOT NULL CHECK(category IN ('OTT','APP','ARG','PUTT','PENALTY')),
       dist_start  REAL    NOT NULL CHECK(dist_start >= 0),
-      lie_start   TEXT    NOT NULL CHECK(lie_start IN ('TEE','FAIRWAY','ROUGH','SAND','RECOVERY','GREEN','FRINGE')),
+      lie_start   TEXT    NOT NULL CHECK(lie_start IN ('TEE','FAIRWAY','ROUGH','SAND','RECOVERY','GREEN','FRINGE','OB','HAZARD')),
       dist_end    REAL    CHECK(dist_end >= 0),
-      lie_end     TEXT    CHECK(lie_end IN ('TEE','FAIRWAY','ROUGH','SAND','RECOVERY','GREEN','FRINGE')),
+      lie_end     TEXT    CHECK(lie_end IN ('TEE','FAIRWAY','ROUGH','SAND','RECOVERY','GREEN','FRINGE','OB','HAZARD')),
       holed       INTEGER NOT NULL DEFAULT 0 CHECK(holed IN (0, 1)),
       sg          REAL    NOT NULL DEFAULT 0,
       UNIQUE(hole_id, sequence)
     );
   `);
+  migrate();
   persist();
+}
+
+function migrate() {
+  const version = stmtGet('PRAGMA user_version')?.user_version ?? 0;
+  if (version >= 1) return;
+
+  // Recreate shots table with expanded lie/category constraints
+  _db.run(`
+    ALTER TABLE shots RENAME TO shots_old;
+    CREATE TABLE shots (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      hole_id     INTEGER NOT NULL REFERENCES holes(id) ON DELETE CASCADE,
+      sequence    INTEGER NOT NULL,
+      category    TEXT    NOT NULL CHECK(category IN ('OTT','APP','ARG','PUTT','PENALTY')),
+      dist_start  REAL    NOT NULL CHECK(dist_start >= 0),
+      lie_start   TEXT    NOT NULL CHECK(lie_start IN ('TEE','FAIRWAY','ROUGH','SAND','RECOVERY','GREEN','FRINGE','OB','HAZARD')),
+      dist_end    REAL    CHECK(dist_end >= 0),
+      lie_end     TEXT    CHECK(lie_end IN ('TEE','FAIRWAY','ROUGH','SAND','RECOVERY','GREEN','FRINGE','OB','HAZARD')),
+      holed       INTEGER NOT NULL DEFAULT 0 CHECK(holed IN (0, 1)),
+      sg          REAL    NOT NULL DEFAULT 0,
+      UNIQUE(hole_id, sequence)
+    );
+    INSERT INTO shots SELECT * FROM shots_old;
+    DROP TABLE shots_old;
+    PRAGMA user_version = 1;
+  `);
 }
 
 function runMany(sql) {
