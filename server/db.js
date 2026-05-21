@@ -59,6 +59,17 @@ async function init() {
   `);
 }
 
-await init();
+if (!process.env.DATABASE_URL) {
+  console.error('ERROR: DATABASE_URL environment variable is not set.');
+  process.exit(1);
+}
+
+try {
+  await init();
+} catch (err) {
+  console.error('ERROR: Failed to connect to database:', err.message);
+  console.error('Check that DATABASE_URL is correct and the database is reachable.');
+  process.exit(1);
+}
 
 export default pool;
