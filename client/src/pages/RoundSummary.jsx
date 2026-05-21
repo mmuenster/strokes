@@ -120,6 +120,9 @@ function computeStats(round) {
   const onePutts      = holeStats.filter(h => h.puttCount === 1).length;
   const twoPutts      = holeStats.filter(h => h.puttCount === 2).length;
   const threePlusPutts = holeStats.filter(h => h.puttCount >= 3).length;
+  const totalFeetHoled = Math.round(
+    allShots.filter(s => s.category === 'PUTT' && s.holed).reduce((sum, s) => sum + s.dist_start * 3, 0)
+  );
 
   // Approach
   const appShots = allShots.filter(s => s.category === 'APP');
@@ -150,7 +153,7 @@ function computeStats(round) {
     scoring: { eagles, birdies, pars, bogeys, doubles, triplePlus },
     driving: { fairwaysHit, fairwaysAttempted: drivingHoles.length, avgDriveDistance },
     gir: { hit: girHit, attempted: n },
-    putting: { totalPutts, avgPerHole: (totalPutts / n).toFixed(2), avgPuttsGIR, onePutts, twoPutts, threePlusPutts },
+    putting: { totalPutts, avgPerHole: (totalPutts / n).toFixed(2), avgPuttsGIR, onePutts, twoPutts, threePlusPutts, totalFeetHoled },
     approach: { avgDist: avgApproachDist, avgProximityFt, count: appShots.length },
     scrambling: { made: scramblingMade, attempted: scramblingAttempted },
     sand: { made: sandMade, attempted: sandAttempted },
@@ -367,6 +370,7 @@ export default function RoundSummary() {
               <Stat label="2-putt"         value={stats.putting.twoPutts} />
               <Stat label="3-putt+"        value={stats.putting.threePlusPutts}
                 valueClass={stats.putting.threePlusPutts > 0 ? 'text-red-500' : 'text-gray-900'} />
+              <Stat label="Feet holed" value={`${stats.putting.totalFeetHoled} ft`} />
               <Stat label="SG: Putting"
                 value={fmtSG(stats.sg.putt)}
                 valueClass={sgClass(stats.sg.putt)} />
