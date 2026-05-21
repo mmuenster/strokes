@@ -34,7 +34,11 @@ export function fmtDist(yards, lie) {
   return `${Math.round(yards)} yd`;
 }
 
-export const LIES = ['TEE', 'FAIRWAY', 'ROUGH', 'SAND', 'RECOVERY', 'FRINGE', 'GREEN'];
+export const LIES = ['TEE', 'FAIRWAY', 'ROUGH', 'SAND', 'RECOVERY', 'FRINGE', 'GREEN', 'OB', 'HAZARD'];
+
+// Ending lie options shown in shot forms (excludes TEE, includes penalty positions)
+export const END_LIES = ['FAIRWAY', 'ROUGH', 'SAND', 'RECOVERY', 'FRINGE', 'GREEN', 'OB', 'HAZARD'];
+
 export const LIE_LABELS = {
   TEE: 'Tee',
   FAIRWAY: 'Fairway',
@@ -43,12 +47,15 @@ export const LIE_LABELS = {
   RECOVERY: 'Recovery',
   FRINGE: 'Fringe',
   GREEN: 'Green',
+  OB: 'OB',
+  HAZARD: 'Hazard',
 };
 
-export const CAT_LABELS = { OTT: 'Off the Tee', APP: 'Approach', ARG: 'Around Green', PUTT: 'Putting' };
+export const CAT_LABELS = { OTT: 'Off the Tee', APP: 'Approach', ARG: 'Around Green', PUTT: 'Putting', PENALTY: 'Penalty' };
 export const CAT_COLORS = {
-  OTT:  { bg: 'bg-blue-100',   text: 'text-blue-700',   bar: '#3b82f6' },
-  APP:  { bg: 'bg-purple-100', text: 'text-purple-700', bar: '#a855f7' },
-  ARG:  { bg: 'bg-orange-100', text: 'text-orange-700', bar: '#f97316' },
-  PUTT: { bg: 'bg-teal-100',   text: 'text-teal-700',   bar: '#14b8a6' },
+  OTT:     { bg: 'bg-blue-100',   text: 'text-blue-700',   bar: '#3b82f6' },
+  APP:     { bg: 'bg-purple-100', text: 'text-purple-700', bar: '#a855f7' },
+  ARG:     { bg: 'bg-orange-100', text: 'text-orange-700', bar: '#f97316' },
+  PUTT:    { bg: 'bg-teal-100',   text: 'text-teal-700',   bar: '#14b8a6' },
+  PENALTY: { bg: 'bg-red-100',    text: 'text-red-700',    bar: '#ef4444' },
 };

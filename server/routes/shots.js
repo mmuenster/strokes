@@ -38,7 +38,7 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'dist_end required when not holed' });
   }
 
-  const LIES = ['TEE','FAIRWAY','ROUGH','SAND','RECOVERY','GREEN','FRINGE'];
+  const LIES = ['TEE','FAIRWAY','ROUGH','SAND','RECOVERY','GREEN','FRINGE','OB','HAZARD'];
   if (!LIES.includes(lie_start)) return res.status(400).json({ error: 'invalid lie_start' });
   if (!holed && !LIES.includes(lie_end)) return res.status(400).json({ error: 'invalid lie_end' });
 
@@ -53,7 +53,7 @@ router.post('/', (req, res) => {
     category = autoCategory(sequence, lie_start, Number(dist_start), hole.par);
   }
 
-  const CATS = ['OTT','APP','ARG','PUTT'];
+  const CATS = ['OTT','APP','ARG','PUTT','PENALTY'];
   if (!CATS.includes(category)) return res.status(400).json({ error: 'invalid category' });
 
   const profile = getRoundProfile(hole.id);

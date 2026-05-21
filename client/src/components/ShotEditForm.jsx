@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../api.js';
-import { LIES, LIE_LABELS, CAT_LABELS, CAT_COLORS, isPuttLie, feetToYards, fmtDist } from '../utils.js';
+import { END_LIES, LIE_LABELS, CAT_COLORS, isPuttLie, feetToYards, fmtDist } from '../utils.js';
 
 function autoCategory(sequence, lieStart, distYards, holePar) {
   if (sequence === 1 && lieStart === 'TEE' && holePar >= 4) return 'OTT';
@@ -10,8 +10,6 @@ function autoCategory(sequence, lieStart, distYards, holePar) {
 }
 
 export default function ShotEditForm({ shot, hole, isFirstShot, onSaved, onCancel }) {
-  // Start is editable only for shot 1; all others are locked to previous shot's end
-  // Shot 1 is always TEE; lock regardless of what's stored
   const [lieStart] = useState(isFirstShot ? 'TEE' : shot.lie_start);
   const [distStartRaw, setDistStartRaw] = useState(
     isPuttLie(shot.lie_start)
@@ -31,6 +29,18 @@ export default function ShotEditForm({ shot, hole, isFirstShot, onSaved, onCance
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  // The active button in the lie grid: 'HOLED' if holed, else the current lieEnd
+  const activeLie = holed ? 'HOLED' : lieEnd;
+
+  function selectLie(lie) {
+    if (lie === 'HOLED') {
+      setHoled(true);
+    } else {
+      setHoled(false);
+      setLieEnd(lie);
+    }
+  }
 
   // Clear ending distance when switching between putt (feet) and non-putt (yards)
   const prevIsPuttEnd = useRef(isPuttLie(shot.lie_end ?? ''));
@@ -106,51 +116,52 @@ export default function ShotEditForm({ shot, hole, isFirstShot, onSaved, onCance
         </div>
       )}
 
-      {/* Holed toggle */}
-      <button
-        type="button"
-        onClick={() => setHoled(!holed)}
-        className={`w-full py-3 rounded-2xl font-bold text-sm transition-colors ${
-          holed
-            ? 'bg-green-500 text-white'
-            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-        }`}
-      >
-        {holed ? '⛳ Holed it!' : 'Tap to mark as holed'}
-      </button>
+      {/* Ending lie — location first */}
+      <div>
+        <label className="label">Ending location</label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {END_LIES.map((lie) => (
+            <button
+              key={lie}
+              type="button"
+              onClick={() => selectLie(lie)}
+              className={`py-2.5 px-1 rounded-xl text-xs font-semibold transition-colors ${
+                activeLie === lie
+                  ? 'bg-gray-700 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {LIE_LABELS[lie]}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => selectLie('HOLED')}
+            className={`py-2.5 px-1 rounded-xl text-xs font-semibold transition-colors ${
+              holed
+                ? 'bg-green-500 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            ⛳ Holed
+          </button>
+        </div>
+      </div>
 
+      {/* Ending distance — only shown when not holed */}
       {!holed && (
-        <>
-          <div>
-            <label className="label">
-              Ending distance {isPuttLie(lieEnd) ? '(feet)' : '(yards)'}
-            </label>
-            <input
-              type="number"
-              inputMode="decimal"
-              className="input"
-              value={distEndRaw}
-              onChange={(e) => setDistEndRaw(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="label">Ending lie</label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {LIES.map((lie) => (
-                <button
-                  key={lie}
-                  type="button"
-                  onClick={() => setLieEnd(lie)}
-                  className={`py-2.5 px-1 rounded-xl text-xs font-semibold transition-colors ${
-                    lieEnd === lie ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {LIE_LABELS[lie]}
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
+        <div>
+          <label className="label">
+            Ending distance {isPuttLie(lieEnd) ? '(feet)' : '(yards)'}
+          </label>
+          <input
+            type="number"
+            inputMode="decimal"
+            className="input"
+            value={distEndRaw}
+            onChange={(e) => setDistEndRaw(e.target.value)}
+          />
+        </div>
       )}
 
       {error && <p className="text-red-600 text-sm">{error}</p>}

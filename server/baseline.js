@@ -106,10 +106,11 @@ const BASELINE = {
   },
 };
 
-// lie values: TEE, FAIRWAY, ROUGH, SAND, RECOVERY, GREEN, FRINGE
 function getCurve(profile, lie) {
   const p = BASELINE[profile] ?? BASELINE.scratch;
   if (lie === 'GREEN' || lie === 'FRINGE') return p.putting;
+  if (lie === 'OB') return p.rough;
+  if (lie === 'HAZARD') return p.rough;
   const key = lie.toLowerCase();
   return p[key] ?? p.fairway;
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../api.js';
-import { LIES, LIE_LABELS, CAT_LABELS, CAT_COLORS, isPuttLie, feetToYards, fmtDist } from '../utils.js';
+import { END_LIES, LIE_LABELS, CAT_LABELS, CAT_COLORS, isPuttLie, feetToYards, fmtDist } from '../utils.js';
 
 function autoCategory(sequence, lieStart, distYards, holePar) {
   if (sequence === 1 && lieStart === 'TEE' && holePar >= 4) return 'OTT';
@@ -9,26 +9,31 @@ function autoCategory(sequence, lieStart, distYards, holePar) {
   return 'APP';
 }
 
+function defaultEndLie(previousShot) {
+  if (!previousShot) return 'FAIRWAY';
+  if (previousShot.lie_end === 'GREEN') return 'GREEN';
+  return 'FAIRWAY';
+}
+
 export default function ShotForm({ hole, previousShot, onSaved }) {
   const nextSeq = previousShot ? previousShot.sequence + 1 : 1;
 
-  // Start position — shot 1 is always TEE; subsequent shots locked to previous shot's end
   const [lieStart] = useState('TEE');
   const [distStartRaw, setDistStartRaw] = useState('');
 
-  // Result
-  const [lieEnd, setLieEnd] = useState('FAIRWAY');
+  // 'HOLED' is a UI-only pseudo-lie that means the shot was holed out
+  const [lieEnd, setLieEnd] = useState(() => defaultEndLie(previousShot));
   const [distEndRaw, setDistEndRaw] = useState('');
-  const [holed, setHoled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [lastSaved, setLastSaved] = useState(null);
 
+  const isHoled = lieEnd === 'HOLED';
+
   // Reset result fields when previousShot changes (new shot ready to enter)
   useEffect(() => {
     setDistEndRaw('');
-    setLieEnd('FAIRWAY');
-    setHoled(false);
+    setLieEnd(defaultEndLie(previousShot));
     setError(null);
     setLastSaved(null);
   }, [previousShot?.id]);
@@ -43,21 +48,19 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
     }
   }, [lieEnd]);
 
-  // Effective start — always from previous shot's end if it exists
   const effectiveLieStart = previousShot ? previousShot.lie_end : lieStart;
   const effectiveDistStartYards = previousShot
     ? previousShot.dist_end
     : isPuttLie(lieStart) ? feetToYards(distStartRaw) : Number(distStartRaw);
 
   const hasStart = previousShot ? true : Boolean(distStartRaw);
-  const isPutt = isPuttLie(effectiveLieStart ?? '');
   const distEndYards = isPuttLie(lieEnd) ? feetToYards(distEndRaw) : Number(distEndRaw);
 
   const previewCat = hasStart
     ? autoCategory(nextSeq, effectiveLieStart, effectiveDistStartYards, hole.par)
     : null;
 
-  async function save(isHoled) {
+  async function save() {
     if (!hasStart) return setError('Enter starting distance.');
     if (!isHoled && !distEndRaw) return setError('Enter ending distance.');
     setSaving(true);
@@ -71,9 +74,29 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
         lie_end: isHoled ? null : lieEnd,
       };
       const shot = await api.shots.create(hole.id, payload);
-      setLastSaved(shot);
-      onSaved(shot);
-      // Result fields reset via useEffect when previousShot id changes
+
+      const isPenalty = lieEnd === 'OB' || lieEnd === 'HAZARD';
+      if (isPenalty) {
+        // OB: stroke + distance — replay from original position
+        // HAZARD: 1 stroke penalty — drop near point of entry
+        const penaltyStart = lieEnd === 'OB'
+          ? { dist: effectiveDistStartYards, lie: effectiveLieStart }
+          : { dist: distEndYards, lie: 'ROUGH' };
+        const penalty = await api.shots.create(hole.id, {
+          dist_start: penaltyStart.dist,
+          lie_start: penaltyStart.lie,
+          dist_end: penaltyStart.dist,
+          lie_end: penaltyStart.lie,
+          holed: 0,
+          category: 'PENALTY',
+        });
+        setLastSaved(penalty);
+        onSaved(shot);
+        onSaved(penalty);
+      } else {
+        setLastSaved(shot);
+        onSaved(shot);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -104,7 +127,6 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
 
       {/* Starting position */}
       {previousShot ? (
-        // Locked — derived from previous shot's end
         <div className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm">
           <span className="text-gray-400 text-xs block mb-0.5">Starting from</span>
           <span className="font-medium text-gray-800">
@@ -112,7 +134,6 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
           </span>
         </div>
       ) : (
-        // First shot — editable
         <>
           <div>
             <label className="label">Starting distance (yards)</label>
@@ -133,44 +154,11 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
         </>
       )}
 
-      {/* Holed shortcut */}
-      <button
-        type="button"
-        onClick={() => save(true)}
-        disabled={!hasStart || saving}
-        className="w-full py-4 rounded-2xl bg-green-500 hover:bg-green-600 text-white font-bold text-lg transition-colors disabled:opacity-50"
-      >
-        ⛳ Holed it!
-      </button>
-
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-gray-200" />
-        </div>
-        <div className="relative flex justify-center">
-          <span className="bg-white px-3 text-xs text-gray-400">or enter result</span>
-        </div>
-      </div>
-
-      {/* Result */}
+      {/* Ending lie — location first, distance second */}
       <div>
-        <label className="label">
-          Ending distance {isPuttLie(lieEnd) ? '(feet)' : '(yards)'}
-        </label>
-        <input
-          type="number"
-          inputMode="decimal"
-          className="input text-lg font-semibold"
-          placeholder={isPuttLie(lieEnd) ? 'e.g. 8' : 'e.g. 15'}
-          value={distEndRaw}
-          onChange={(e) => setDistEndRaw(e.target.value)}
-        />
-      </div>
-
-      <div>
-        <label className="label">Ending lie</label>
-        <div className="grid grid-cols-4 gap-1.5">
-          {LIES.map((lie) => (
+        <label className="label">Ending location</label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {END_LIES.map((lie) => (
             <button
               key={lie}
               type="button"
@@ -184,8 +172,36 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
               {LIE_LABELS[lie]}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setLieEnd('HOLED')}
+            className={`py-2.5 px-1 rounded-xl text-xs font-semibold transition-colors ${
+              isHoled
+                ? 'bg-green-500 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            ⛳ Holed
+          </button>
         </div>
       </div>
+
+      {/* Ending distance — only shown when not holed */}
+      {!isHoled && (
+        <div>
+          <label className="label">
+            Ending distance {isPuttLie(lieEnd) ? '(feet)' : '(yards)'}
+          </label>
+          <input
+            type="number"
+            inputMode="decimal"
+            className="input text-lg font-semibold"
+            placeholder={isPuttLie(lieEnd) ? 'e.g. 8' : 'e.g. 15'}
+            value={distEndRaw}
+            onChange={(e) => setDistEndRaw(e.target.value)}
+          />
+        </div>
+      )}
 
       {error && <p className="text-red-600 text-sm">{error}</p>}
 
@@ -200,8 +216,8 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
 
       <button
         type="button"
-        onClick={() => save(false)}
-        disabled={!hasStart || !distEndRaw || saving}
+        onClick={save}
+        disabled={!hasStart || (!isHoled && !distEndRaw) || saving}
         className="btn-primary w-full text-base"
       >
         {saving ? 'Saving…' : 'Save shot'}

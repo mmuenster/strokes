@@ -46,10 +46,15 @@ export default function ShotList({ shots, hole, onDeleted, onEdited }) {
                   </span>
                 </div>
                 <div className="text-xs text-gray-500">
-                  {fmtDist(shot.dist_start, shot.lie_start)} {LIE_LABELS[shot.lie_start]}
-                  {shot.holed
-                    ? ' → Holed!'
-                    : ` → ${fmtDist(shot.dist_end, shot.lie_end)} ${LIE_LABELS[shot.lie_end] ?? ''}`}
+                  {shot.category === 'PENALTY'
+                    ? `Penalty stroke — from ${fmtDist(shot.dist_start, shot.lie_start)}`
+                    : <>
+                        {fmtDist(shot.dist_start, shot.lie_start)} {LIE_LABELS[shot.lie_start]}
+                        {shot.holed
+                          ? ' → Holed!'
+                          : ` → ${fmtDist(shot.dist_end, shot.lie_end)} ${LIE_LABELS[shot.lie_end] ?? ''}`}
+                      </>
+                  }
                 </div>
               </div>
               <div className="flex gap-1 flex-shrink-0">
