@@ -33,7 +33,7 @@ export default function HoleNav({ holes, activeHoleId, onSelect, onAddHole }) {
             }`}
           >
             <div>{item.hole.number}</div>
-            <div className="text-[10px] opacity-75">P{item.hole.par}</div>
+            <div className="text-[10px] opacity-75">Par {item.hole.par}</div>
           </button>
         )
       )}
