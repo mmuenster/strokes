@@ -5,8 +5,200 @@ import {
   ReferenceLine, ResponsiveContainer, Cell
 } from 'recharts';
 import { api } from '../api.js';
-import SGSummaryBar from '../components/SGSummaryBar.jsx';
 import { fmtSG, sgClass, CAT_COLORS, CAT_LABELS } from '../utils.js';
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function pct(made, attempted) {
+  if (!attempted) return '—';
+  return `${Math.round((made / attempted) * 100)}%`;
+}
+
+function fmtScore(n) {
+  if (n === 0) return 'E';
+  return n > 0 ? `+${n}` : `${n}`;
+}
+
+function avg(arr) {
+  if (!arr.length) return null;
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
+// ── stat components ───────────────────────────────────────────────────────────
+
+function StatCard({ title, children }) {
+  return (
+    <div className="card">
+      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">{title}</h2>
+      {children}
+    </div>
+  );
+}
+
+function StatGrid({ children }) {
+  return <div className="grid grid-cols-3 gap-y-4">{children}</div>;
+}
+
+function Stat({ label, value, sub, valueClass }) {
+  return (
+    <div className="text-center">
+      <div className={`text-xl font-bold ${valueClass ?? 'text-gray-900'}`}>{value ?? '—'}</div>
+      <div className="text-xs text-gray-400 mt-0.5 leading-tight">{label}</div>
+      {sub != null && <div className="text-xs text-gray-500 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function PctStat({ label, made, attempted }) {
+  return (
+    <Stat
+      label={label}
+      value={pct(made, attempted)}
+      sub={attempted ? `${made} / ${attempted}` : null}
+    />
+  );
+}
+
+// ── stats computation ─────────────────────────────────────────────────────────
+
+function computeStats(round) {
+  const holes = (round.holes ?? []).filter(h => (h.shots ?? []).length > 0);
+  if (!holes.length) return null;
+
+  const allShots = holes.flatMap(h => h.shots);
+
+  const holeStats = holes.map(hole => {
+    const shots = hole.shots;
+    const score = shots.length;
+    const par = hole.par;
+    const scoreToPar = score - par;
+
+    const shot1 = shots.find(s => s.sequence === 1);
+    const firstOnGreen = shots.find(s => s.lie_end === 'GREEN' || s.lie_end === 'FRINGE');
+    const gir = firstOnGreen ? firstOnGreen.sequence <= par - 2 : false;
+
+    const puttCount = shots.filter(s => s.category === 'PUTT').length;
+    const fairwayAttempted = par >= 4;
+    const fairwayHit = fairwayAttempted && shot1?.lie_end === 'FAIRWAY';
+    const driveDistance = fairwayAttempted && shot1?.dist_end != null
+      ? shot1.dist_start - shot1.dist_end : null;
+
+    const hasSandShot = shots.some(s => s.lie_start === 'SAND');
+
+    return {
+      par, score, scoreToPar, puttCount, gir,
+      fairwayAttempted, fairwayHit, driveDistance, hasSandShot,
+    };
+  });
+
+  const n = holeStats.length;
+  const totalStrokes = holeStats.reduce((s, h) => s + h.score, 0);
+  const totalPar = holeStats.reduce((s, h) => s + h.par, 0);
+
+  // Scoring breakdown
+  const eagles     = holeStats.filter(h => h.scoreToPar <= -2).length;
+  const birdies    = holeStats.filter(h => h.scoreToPar === -1).length;
+  const pars       = holeStats.filter(h => h.scoreToPar === 0).length;
+  const bogeys     = holeStats.filter(h => h.scoreToPar === 1).length;
+  const doubles    = holeStats.filter(h => h.scoreToPar === 2).length;
+  const triplePlus = holeStats.filter(h => h.scoreToPar >= 3).length;
+
+  // Driving
+  const drivingHoles = holeStats.filter(h => h.fairwayAttempted);
+  const fairwaysHit = drivingHoles.filter(h => h.fairwayHit).length;
+  const driveDists = drivingHoles.map(h => h.driveDistance).filter(d => d != null && d > 0);
+  const avgDriveDistance = driveDists.length ? Math.round(avg(driveDists)) : null;
+
+  // GIR
+  const girHit = holeStats.filter(h => h.gir).length;
+
+  // Putting
+  const totalPutts = holeStats.reduce((s, h) => s + h.puttCount, 0);
+  const girHoles = holeStats.filter(h => h.gir);
+  const avgPuttsGIR = girHoles.length
+    ? (girHoles.reduce((s, h) => s + h.puttCount, 0) / girHoles.length).toFixed(2) : null;
+  const onePutts      = holeStats.filter(h => h.puttCount === 1).length;
+  const twoPutts      = holeStats.filter(h => h.puttCount === 2).length;
+  const threePlusPutts = holeStats.filter(h => h.puttCount >= 3).length;
+
+  // Approach
+  const appShots = allShots.filter(s => s.category === 'APP');
+  const appOnGreen = appShots.filter(s => s.lie_end === 'GREEN' || s.lie_end === 'FRINGE');
+  const avgApproachDist = appShots.length ? Math.round(avg(appShots.map(s => s.dist_start))) : null;
+  const avgProximityFt = appOnGreen.length
+    ? Math.round(avg(appOnGreen.map(s => s.dist_end * 3))) : null;
+
+  // Scrambling (missed GIR, made par or better)
+  const scramblingAttempted = holeStats.filter(h => !h.gir).length;
+  const scramblingMade = holeStats.filter(h => !h.gir && h.scoreToPar <= 0).length;
+
+  // Sand saves
+  const sandAttempted = holeStats.filter(h => h.hasSandShot).length;
+  const sandMade = holeStats.filter(h => h.hasSandShot && h.scoreToPar <= 0).length;
+
+  // Penalties
+  const obShots       = allShots.filter(s => s.lie_end === 'OB').length;
+  const hazardShots   = allShots.filter(s => s.lie_end === 'HAZARD').length;
+  const penaltyStrokes = allShots.filter(s => s.category === 'PENALTY').length;
+
+  // SG by category
+  const sg = round.sg ?? {};
+
+  return {
+    n, totalStrokes, totalPar,
+    scoreToPar: totalStrokes - totalPar,
+    scoring: { eagles, birdies, pars, bogeys, doubles, triplePlus },
+    driving: { fairwaysHit, fairwaysAttempted: drivingHoles.length, avgDriveDistance },
+    gir: { hit: girHit, attempted: n },
+    putting: { totalPutts, avgPerHole: (totalPutts / n).toFixed(2), avgPuttsGIR, onePutts, twoPutts, threePlusPutts },
+    approach: { avgDist: avgApproachDist, avgProximityFt, count: appShots.length },
+    scrambling: { made: scramblingMade, attempted: scramblingAttempted },
+    sand: { made: sandMade, attempted: sandAttempted },
+    penalties: { ob: obShots, hazard: hazardShots, total: penaltyStrokes },
+    sg,
+  };
+}
+
+// ── chart tooltip ─────────────────────────────────────────────────────────────
+
+function ChartTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-xs">
+      <p className="font-semibold mb-1">{label}</p>
+      {payload.map((p) => (
+        <p key={p.name} style={{ color: p.fill }}>
+          {p.name}: {p.value >= 0 ? '+' : ''}{Number(p.value).toFixed(2)}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+// ── scoring badge ─────────────────────────────────────────────────────────────
+
+const SCORE_STYLES = {
+  eagle:     { label: 'Eagle',    bg: 'bg-yellow-100', text: 'text-yellow-700' },
+  birdie:    { label: 'Birdie',   bg: 'bg-green-100',  text: 'text-green-700' },
+  par:       { label: 'Par',      bg: 'bg-gray-100',   text: 'text-gray-600' },
+  bogey:     { label: 'Bogey',    bg: 'bg-orange-100', text: 'text-orange-700' },
+  double:    { label: 'Double',   bg: 'bg-red-100',    text: 'text-red-600' },
+  triplePlus:{ label: 'Triple+',  bg: 'bg-red-200',    text: 'text-red-800' },
+};
+
+function ScoringBadge({ type, count }) {
+  const s = SCORE_STYLES[type];
+  return (
+    <div className="text-center">
+      <div className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${s.bg} ${s.text} mb-1`}>
+        {s.label}
+      </div>
+      <div className="text-xl font-bold text-gray-900">{count}</div>
+    </div>
+  );
+}
+
+// ── main page ─────────────────────────────────────────────────────────────────
 
 export default function RoundSummary() {
   const { id } = useParams();
@@ -21,42 +213,31 @@ export default function RoundSummary() {
   if (loading) return <div className="text-center py-20 text-gray-400">Loading…</div>;
   if (!round) return null;
 
-  // Per-hole SG data
-  const holeData = round.holes.map((h) => {
+  const stats = computeStats(round);
+
+  const holeData = (round.holes ?? []).map(h => {
     const shots = h.shots ?? [];
     const sg = { OTT: 0, APP: 0, ARG: 0, PUTT: 0 };
     let total = 0;
     for (const s of shots) {
-      sg[s.category] = (sg[s.category] ?? 0) + Number(s.sg);
+      if (s.category in sg) sg[s.category] = (sg[s.category] ?? 0) + Number(s.sg);
       total += Number(s.sg);
     }
     return { hole: `H${h.number}`, total, ...sg };
   });
 
-  // Category breakdown
-  const catData = ['OTT', 'APP', 'ARG', 'PUTT'].map((cat) => ({
+  const catData = ['OTT', 'APP', 'ARG', 'PUTT'].map(cat => ({
     cat,
     label: CAT_LABELS[cat],
     value: Number(round.sg?.[cat.toLowerCase()] ?? 0),
     color: CAT_COLORS[cat].bar,
   }));
 
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (!active || !payload?.length) return null;
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-xs">
-        <p className="font-semibold mb-1">{label}</p>
-        {payload.map((p) => (
-          <p key={p.name} style={{ color: p.fill }}>
-            {p.name}: {p.value >= 0 ? '+' : ''}{Number(p.value).toFixed(2)}
-          </p>
-        ))}
-      </div>
-    );
-  };
+  const scoreToPar = stats?.scoreToPar ?? 0;
+  const scoreClass = scoreToPar < 0 ? 'text-green-600' : scoreToPar > 0 ? 'text-red-500' : 'text-gray-700';
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-4 space-y-6">
+    <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
       {/* Header */}
       <div className="flex items-center gap-3">
         <button onClick={() => navigate(`/rounds/${id}`)} className="btn-ghost p-2 min-h-0 h-10 w-10 text-lg">
@@ -68,90 +249,191 @@ export default function RoundSummary() {
         </div>
       </div>
 
-      <SGSummaryBar sg={round.sg} />
-
-      {/* Category chart */}
-      <div className="card">
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
-          By category
-        </h2>
-        <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={catData} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-            <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} />
-            <ReferenceLine y={0} stroke="#9ca3af" />
-            <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-              {catData.map((d) => (
-                <Cell key={d.cat} fill={d.value >= 0 ? d.color : '#ef4444'} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Hole-by-hole heatmap */}
-      {holeData.length > 0 && (
-        <div className="card">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-            Hole by hole
-          </h2>
-          <div className="space-y-2">
-            {holeData.map((h) => (
-              <div key={h.hole} className="flex items-center gap-2">
-                <span className="text-xs font-medium text-gray-400 w-8">{h.hole}</span>
-                <div className="flex-1 relative h-7 rounded-lg overflow-hidden bg-gray-50">
-                  <div
-                    className="absolute top-0 bottom-0 rounded-lg transition-all"
-                    style={{
-                      width: `${Math.min(100, Math.abs(h.total) * 25)}%`,
-                      left: h.total >= 0 ? '50%' : 'auto',
-                      right: h.total < 0 ? '50%' : 'auto',
-                      backgroundColor: h.total >= 0 ? '#22c55e' : '#ef4444',
-                      opacity: 0.6 + Math.min(0.4, Math.abs(h.total) * 0.15),
-                    }}
-                  />
-                  <div
-                    className="absolute top-0 bottom-0 left-1/2 w-px bg-gray-300"
-                    style={{ transform: 'translateX(-50%)' }}
-                  />
-                </div>
-                <span className={`text-xs font-bold w-12 text-right ${sgClass(h.total)}`}>
-                  {fmtSG(h.total)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Stacked category chart by hole */}
-      {holeData.length > 0 && (
-        <div className="card">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
-            Category breakdown per hole
-          </h2>
-          <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={holeData} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-              <XAxis dataKey="hole" tick={{ fontSize: 9 }} />
-              <YAxis tick={{ fontSize: 10 }} />
-              <ReferenceLine y={0} stroke="#9ca3af" />
-              <Tooltip content={<CustomTooltip />} />
-              {['OTT', 'APP', 'ARG', 'PUTT'].map((cat) => (
-                <Bar key={cat} dataKey={cat} stackId="a" name={cat}
-                  fill={CAT_COLORS[cat].bar} radius={cat === 'PUTT' ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {holeData.length === 0 && (
+      {!stats ? (
         <div className="card text-center py-8 text-gray-400 text-sm">
           No shot data yet — enter shots from the round view.
         </div>
+      ) : (
+        <>
+          {/* Score overview */}
+          <StatCard title="Score">
+            <div className="flex items-center justify-around">
+              <div className="text-center">
+                <div className="text-4xl font-bold text-gray-900">{stats.totalStrokes}</div>
+                <div className="text-xs text-gray-400 mt-1">Total strokes</div>
+              </div>
+              <div className="text-center">
+                <div className={`text-4xl font-bold ${scoreClass}`}>{fmtScore(stats.scoreToPar)}</div>
+                <div className="text-xs text-gray-400 mt-1">vs Par {stats.totalPar}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-bold text-gray-900">{stats.n}</div>
+                <div className="text-xs text-gray-400 mt-1">Holes played</div>
+              </div>
+            </div>
+          </StatCard>
+
+          {/* Scoring breakdown */}
+          <StatCard title="Scoring breakdown">
+            <div className="grid grid-cols-3 gap-4">
+              <ScoringBadge type="eagle"      count={stats.scoring.eagles} />
+              <ScoringBadge type="birdie"     count={stats.scoring.birdies} />
+              <ScoringBadge type="par"        count={stats.scoring.pars} />
+              <ScoringBadge type="bogey"      count={stats.scoring.bogeys} />
+              <ScoringBadge type="double"     count={stats.scoring.doubles} />
+              <ScoringBadge type="triplePlus" count={stats.scoring.triplePlus} />
+            </div>
+          </StatCard>
+
+          {/* Strokes Gained */}
+          <StatCard title="Strokes gained">
+            <StatGrid>
+              <Stat label="Off the Tee"     value={fmtSG(stats.sg.ott)}   valueClass={sgClass(stats.sg.ott)} />
+              <Stat label="Approach"        value={fmtSG(stats.sg.app)}   valueClass={sgClass(stats.sg.app)} />
+              <Stat label="Around Green"    value={fmtSG(stats.sg.arg)}   valueClass={sgClass(stats.sg.arg)} />
+              <Stat label="Putting"         value={fmtSG(stats.sg.putt)}  valueClass={sgClass(stats.sg.putt)} />
+              <Stat label="Total"           value={fmtSG(stats.sg.total)} valueClass={sgClass(stats.sg.total)} />
+            </StatGrid>
+            <div className="mt-4">
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={catData} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <ReferenceLine y={0} stroke="#9ca3af" />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                    {catData.map(d => <Cell key={d.cat} fill={d.value >= 0 ? d.color : '#ef4444'} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </StatCard>
+
+          {/* Driving */}
+          <StatCard title="Driving">
+            <StatGrid>
+              <PctStat label="Fairways hit"
+                made={stats.driving.fairwaysHit}
+                attempted={stats.driving.fairwaysAttempted} />
+              <Stat label="Avg distance"
+                value={stats.driving.avgDriveDistance != null ? `${stats.driving.avgDriveDistance} yd` : '—'} />
+              <Stat label="SG: Off the Tee"
+                value={fmtSG(stats.sg.ott)}
+                valueClass={sgClass(stats.sg.ott)} />
+            </StatGrid>
+          </StatCard>
+
+          {/* Approach */}
+          <StatCard title="Approach">
+            <StatGrid>
+              <PctStat label="Greens in reg."
+                made={stats.gir.hit}
+                attempted={stats.gir.attempted} />
+              <Stat label="Avg distance"
+                value={stats.approach.avgDist != null ? `${stats.approach.avgDist} yd` : '—'} />
+              <Stat label="Avg proximity"
+                value={stats.approach.avgProximityFt != null ? `${stats.approach.avgProximityFt} ft` : '—'} />
+              <Stat label="SG: Approach"
+                value={fmtSG(stats.sg.app)}
+                valueClass={sgClass(stats.sg.app)} />
+            </StatGrid>
+          </StatCard>
+
+          {/* Around the green */}
+          <StatCard title="Around the green">
+            <StatGrid>
+              <PctStat label="Scrambling"
+                made={stats.scrambling.made}
+                attempted={stats.scrambling.attempted} />
+              <PctStat label="Sand saves"
+                made={stats.sand.made}
+                attempted={stats.sand.attempted} />
+              <Stat label="SG: Around Green"
+                value={fmtSG(stats.sg.arg)}
+                valueClass={sgClass(stats.sg.arg)} />
+            </StatGrid>
+          </StatCard>
+
+          {/* Putting */}
+          <StatCard title="Putting">
+            <StatGrid>
+              <Stat label="Total putts"    value={stats.putting.totalPutts} />
+              <Stat label="Per hole"       value={stats.putting.avgPerHole} />
+              <Stat label="Per GIR hole"   value={stats.putting.avgPuttsGIR ?? '—'} />
+              <PctStat label="1-putt"
+                made={stats.putting.onePutts}
+                attempted={stats.n} />
+              <Stat label="2-putt"         value={stats.putting.twoPutts} />
+              <Stat label="3-putt+"        value={stats.putting.threePlusPutts}
+                valueClass={stats.putting.threePlusPutts > 0 ? 'text-red-500' : 'text-gray-900'} />
+              <Stat label="SG: Putting"
+                value={fmtSG(stats.sg.putt)}
+                valueClass={sgClass(stats.sg.putt)} />
+            </StatGrid>
+          </StatCard>
+
+          {/* Penalties */}
+          {(stats.penalties.ob > 0 || stats.penalties.hazard > 0 || stats.penalties.total > 0) && (
+            <StatCard title="Penalties">
+              <StatGrid>
+                <Stat label="OB shots"         value={stats.penalties.ob}    valueClass={stats.penalties.ob > 0 ? 'text-red-500' : 'text-gray-900'} />
+                <Stat label="Hazard shots"     value={stats.penalties.hazard} valueClass={stats.penalties.hazard > 0 ? 'text-red-500' : 'text-gray-900'} />
+                <Stat label="Penalty strokes"  value={stats.penalties.total}  valueClass={stats.penalties.total > 0 ? 'text-red-500' : 'text-gray-900'} />
+              </StatGrid>
+            </StatCard>
+          )}
+
+          {/* Hole-by-hole SG */}
+          {holeData.length > 0 && (
+            <StatCard title="Hole by hole">
+              <div className="space-y-2">
+                {holeData.map(h => (
+                  <div key={h.hole} className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-gray-400 w-8">{h.hole}</span>
+                    <div className="flex-1 relative h-7 rounded-lg overflow-hidden bg-gray-50">
+                      <div
+                        className="absolute top-0 bottom-0 rounded-lg transition-all"
+                        style={{
+                          width: `${Math.min(100, Math.abs(h.total) * 25)}%`,
+                          left: h.total >= 0 ? '50%' : 'auto',
+                          right: h.total < 0 ? '50%' : 'auto',
+                          backgroundColor: h.total >= 0 ? '#22c55e' : '#ef4444',
+                          opacity: 0.6 + Math.min(0.4, Math.abs(h.total) * 0.15),
+                        }}
+                      />
+                      <div className="absolute top-0 bottom-0 left-1/2 w-px bg-gray-300"
+                        style={{ transform: 'translateX(-50%)' }} />
+                    </div>
+                    <span className={`text-xs font-bold w-12 text-right ${sgClass(h.total)}`}>
+                      {fmtSG(h.total)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </StatCard>
+          )}
+
+          {/* Stacked category chart by hole */}
+          {holeData.length > 0 && (
+            <StatCard title="Category breakdown per hole">
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={holeData} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                  <XAxis dataKey="hole" tick={{ fontSize: 9 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <ReferenceLine y={0} stroke="#9ca3af" />
+                  <Tooltip content={<ChartTooltip />} />
+                  {['OTT', 'APP', 'ARG', 'PUTT'].map(cat => (
+                    <Bar key={cat} dataKey={cat} stackId="a" name={cat}
+                      fill={CAT_COLORS[cat].bar}
+                      radius={cat === 'PUTT' ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </StatCard>
+          )}
+        </>
       )}
     </div>
   );
