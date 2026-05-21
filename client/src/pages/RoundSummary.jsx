@@ -135,9 +135,29 @@ function computeStats(round) {
   const scramblingAttempted = holeStats.filter(h => !h.gir).length;
   const scramblingMade = holeStats.filter(h => !h.gir && h.scoreToPar <= 0).length;
 
-  // Sand saves
+  // Sand saves (per hole)
   const sandAttempted = holeStats.filter(h => h.hasSandShot).length;
   const sandMade = holeStats.filter(h => h.hasSandShot && h.scoreToPar <= 0).length;
+
+  // Sand shots — detailed
+  const sandShots = allShots.filter(s => s.lie_start === 'SAND');
+  const greensideSand = sandShots.filter(s => s.category === 'ARG' || s.dist_start <= 30);
+  const fairwayBunker = sandShots.filter(s => s.category !== 'ARG' && s.dist_start > 30);
+  const holedFromSand = sandShots.filter(s => s.holed).length;
+  const avgSandDist = sandShots.length ? Math.round(avg(sandShots.map(s => s.dist_start))) : null;
+  const sandOnGreen = sandShots.filter(s => (s.lie_end === 'GREEN' || s.lie_end === 'FRINGE') && !s.holed);
+  const avgSandProximityFt = sandOnGreen.length
+    ? Math.round(avg(sandOnGreen.map(s => s.dist_end * 3))) : null;
+  const avgSandDistGained = sandShots.filter(s => !s.holed && s.dist_end != null).length
+    ? Math.round(avg(sandShots.filter(s => !s.holed && s.dist_end != null).map(s => s.dist_start - s.dist_end))) : null;
+  const totalSandSG = sandShots.reduce((sum, s) => sum + Number(s.sg), 0);
+  const avgSandSG = sandShots.length ? totalSandSG / sandShots.length : null;
+  // Outcome breakdown
+  const sandOutcomes = sandShots.reduce((acc, s) => {
+    const key = s.holed ? 'Holed' : (s.lie_end ?? 'Unknown');
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
 
   // Penalties
   const obShots       = allShots.filter(s => s.lie_end === 'OB').length;
@@ -157,6 +177,18 @@ function computeStats(round) {
     approach: { avgDist: avgApproachDist, avgProximityFt, count: appShots.length },
     scrambling: { made: scramblingMade, attempted: scramblingAttempted },
     sand: { made: sandMade, attempted: sandAttempted },
+    sandDetail: {
+      total: sandShots.length,
+      greenside: greensideSand.length,
+      fairwayBunker: fairwayBunker.length,
+      holedFromSand,
+      avgDist: avgSandDist,
+      avgProximityFt: avgSandProximityFt,
+      avgDistGained: avgSandDistGained,
+      avgSG: avgSandSG,
+      totalSG: totalSandSG,
+      outcomes: sandOutcomes,
+    },
     penalties: { ob: obShots, hazard: hazardShots, total: penaltyStrokes },
     sg,
   };
@@ -357,6 +389,44 @@ export default function RoundSummary() {
                 valueClass={sgClass(stats.sg.arg)} />
             </StatGrid>
           </StatCard>
+
+          {/* Sand shots */}
+          {stats.sandDetail.total > 0 && (
+            <StatCard title="Sand shots">
+              <StatGrid>
+                <Stat label="Total"           value={stats.sandDetail.total} />
+                <Stat label="Greenside"       value={stats.sandDetail.greenside} />
+                <Stat label="Fairway bunker"  value={stats.sandDetail.fairwayBunker} />
+                <PctStat label="Sand saves"
+                  made={stats.sand.made}
+                  attempted={stats.sand.attempted} />
+                <Stat label="Avg distance"
+                  value={stats.sandDetail.avgDist != null ? `${stats.sandDetail.avgDist} yd` : '—'} />
+                <Stat label="Avg proximity"
+                  value={stats.sandDetail.avgProximityFt != null ? `${stats.sandDetail.avgProximityFt} ft` : '—'} />
+                <Stat label="Avg dist. gained"
+                  value={stats.sandDetail.avgDistGained != null ? `${stats.sandDetail.avgDistGained} yd` : '—'} />
+                <Stat label="Holed from sand" value={stats.sandDetail.holedFromSand}
+                  valueClass={stats.sandDetail.holedFromSand > 0 ? 'text-green-600' : 'text-gray-900'} />
+                <Stat label="SG: Sand"
+                  value={fmtSG(stats.sandDetail.totalSG)}
+                  valueClass={sgClass(stats.sandDetail.totalSG)} />
+              </StatGrid>
+              {Object.keys(stats.sandDetail.outcomes).length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <p className="text-xs text-gray-400 mb-2">Shot outcomes</p>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(stats.sandDetail.outcomes).map(([lie, count]) => (
+                      <div key={lie} className="flex items-center gap-1 bg-gray-50 rounded-lg px-2 py-1">
+                        <span className="text-xs font-semibold text-gray-700">{lie}</span>
+                        <span className="text-xs text-gray-400">×{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </StatCard>
+          )}
 
           {/* Putting */}
           <StatCard title="Putting">
