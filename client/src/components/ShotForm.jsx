@@ -54,6 +54,8 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
     : isPuttLie(lieStart) ? feetToYards(distStartRaw) : Number(distStartRaw);
 
   const hasStart = previousShot ? true : Boolean(distStartRaw);
+  // OB: no distance needed — you replay from the original spot
+  const needsDist = !isHoled && lieEnd !== 'OB';
   const distEndYards = isPuttLie(lieEnd) ? feetToYards(distEndRaw) : Number(distEndRaw);
 
   const previewCat = hasStart
@@ -62,7 +64,7 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
 
   async function save() {
     if (!hasStart) return setError('Enter starting distance.');
-    if (!isHoled && !distEndRaw) return setError('Enter ending distance.');
+    if (needsDist && !distEndRaw) return setError('Enter ending distance.');
     setSaving(true);
     setError(null);
     try {
@@ -70,7 +72,8 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
         dist_start: effectiveDistStartYards,
         lie_start: effectiveLieStart,
         holed: isHoled ? 1 : 0,
-        dist_end: isHoled ? null : distEndYards,
+        // OB: store dist_end = dist_start (no progress on the shot itself)
+        dist_end: isHoled ? null : lieEnd === 'OB' ? effectiveDistStartYards : distEndYards,
         lie_end: isHoled ? null : lieEnd,
       };
       const shot = await api.shots.create(hole.id, payload);
@@ -186,8 +189,8 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
         </div>
       </div>
 
-      {/* Ending distance — only shown when not holed */}
-      {!isHoled && (
+      {/* Ending distance — hidden for holed shots and OB (replays from original spot) */}
+      {needsDist && (
         <div>
           <label className="label">
             Ending distance {isPuttLie(lieEnd) ? '(feet)' : '(yards)'}
@@ -217,7 +220,7 @@ export default function ShotForm({ hole, previousShot, onSaved }) {
       <button
         type="button"
         onClick={save}
-        disabled={!hasStart || (!isHoled && !distEndRaw) || saving}
+        disabled={!hasStart || (needsDist && !distEndRaw) || saving}
         className="btn-primary w-full text-base"
       >
         {saving ? 'Saving…' : 'Save shot'}

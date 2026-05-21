@@ -57,9 +57,11 @@ export default function ShotEditForm({ shot, hole, isFirstShot, onSaved, onCance
   const previewCat = autoCategory(shot.sequence, lieStart, distStartYards, hole.par);
   const catColors = CAT_COLORS[previewCat];
 
+  const needsDist = !holed && lieEnd !== 'OB';
+
   async function save() {
     if (isFirstShot && !distStartRaw) return setError('Enter starting distance.');
-    if (!holed && !distEndRaw) return setError('Enter ending distance.');
+    if (needsDist && !distEndRaw) return setError('Enter ending distance.');
     setSaving(true);
     setError(null);
     try {
@@ -67,7 +69,7 @@ export default function ShotEditForm({ shot, hole, isFirstShot, onSaved, onCance
         dist_start: distStartYards,
         lie_start: lieStart,
         holed: holed ? 1 : 0,
-        dist_end: holed ? null : distEndYards,
+        dist_end: holed ? null : lieEnd === 'OB' ? distStartYards : distEndYards,
         lie_end: holed ? null : lieEnd,
       };
       const updated = await api.shots.update(shot.id, payload);
@@ -148,8 +150,8 @@ export default function ShotEditForm({ shot, hole, isFirstShot, onSaved, onCance
         </div>
       </div>
 
-      {/* Ending distance — only shown when not holed */}
-      {!holed && (
+      {/* Ending distance — hidden for holed and OB */}
+      {needsDist && (
         <div>
           <label className="label">
             Ending distance {isPuttLie(lieEnd) ? '(feet)' : '(yards)'}
