@@ -5,6 +5,7 @@ import HoleNav from '../components/HoleNav.jsx';
 import ShotForm from '../components/ShotForm.jsx';
 import ShotList from '../components/ShotList.jsx';
 import SGSummaryBar from '../components/SGSummaryBar.jsx';
+import { fmtScore } from '../roundStats.js';
 
 const DEFAULT_PAR = 4;
 
@@ -127,6 +128,10 @@ export default function RoundDetail() {
   const activeHole = round.holes.find((h) => h.id === activeHoleId);
   const previousShot = activeHole?.shots?.slice(-1)[0] ?? null;
 
+  const playedHoles = round.holes.filter((h) => (h.shots ?? []).length > 0);
+  const totalStrokes = playedHoles.reduce((s, h) => s + h.shots.length, 0);
+  const playedPar = playedHoles.reduce((s, h) => s + h.par, 0);
+
   return (
     <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
       {/* Header */}
@@ -136,7 +141,14 @@ export default function RoundDetail() {
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="font-bold text-gray-900 truncate">{round.course_name}</h1>
-          <p className="text-xs text-gray-400">{round.date}</p>
+          <p className="text-xs text-gray-400">
+            {round.date}
+            {totalStrokes > 0 && (
+              <span className="ml-2 text-gray-700 font-medium">
+                · {totalStrokes} ({fmtScore(totalStrokes - playedPar)})
+              </span>
+            )}
+          </p>
         </div>
         <button
           onClick={() => navigate(`/rounds/${id}/summary`)}

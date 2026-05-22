@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../api.js';
 import RoundForm from '../components/RoundForm.jsx';
 import { fmtSG, sgClass, CAT_COLORS } from '../utils.js';
+import { fmtScore } from '../roundStats.js';
 
 export default function Home() {
   const [rounds, setRounds] = useState([]);
@@ -110,6 +111,14 @@ export default function Home() {
                       <div className="text-xs text-gray-400 mt-0.5">
                         {r.date} · {r.holes_played} holes · {r.profile === 'hdcp15' ? '15 hdcp' : 'Scratch'}
                       </div>
+                      {Number(r.total_strokes) > 0 && (
+                        <div className="text-sm font-medium text-gray-700 mt-1">
+                          {r.total_strokes} strokes
+                          <span className="text-gray-400 ml-1.5">
+                            ({fmtScore(Number(r.total_strokes) - Number(r.played_par))})
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

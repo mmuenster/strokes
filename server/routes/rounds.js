@@ -12,7 +12,13 @@ router.get('/', async (req, res) => {
       COALESCE(SUM(CASE WHEN s.category='ARG'  THEN s.sg END), 0) AS sg_arg,
       COALESCE(SUM(CASE WHEN s.category='PUTT' THEN s.sg END), 0) AS sg_putt,
       COALESCE(SUM(s.sg), 0)                                       AS sg_total,
-      COUNT(DISTINCT h.id)                                          AS holes_played
+      COUNT(s.id)                                                  AS total_strokes,
+      COUNT(DISTINCT CASE WHEN s.id IS NOT NULL THEN h.id END)     AS holes_played,
+      COALESCE((
+        SELECT SUM(h2.par) FROM holes h2
+        WHERE h2.round_id = r.id
+        AND EXISTS (SELECT 1 FROM shots s2 WHERE s2.hole_id = h2.id)
+      ), 0)                                                        AS played_par
     FROM rounds r
     LEFT JOIN holes h ON h.round_id = r.id
     LEFT JOIN shots s ON s.hole_id = h.id
