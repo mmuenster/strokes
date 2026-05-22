@@ -5,7 +5,9 @@ import { api } from '../api.js';
 export default function AddCourse() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: '', city: '', state: 'CA' });
-  const [looking, setLooking] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [matches, setMatches] = useState(null); // array of { name, city, state, url }
+  const [loadingMatch, setLoadingMatch] = useState(null); // url being fetched
   const [result, setResult] = useState(null); // { found, name, city, state, tees, url }
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -14,21 +16,42 @@ export default function AddCourse() {
 
   function set(field, val) { setForm(f => ({ ...f, [field]: val })); }
 
-  async function lookup(e) {
+  async function search(e) {
     e.preventDefault();
-    if (!form.name.trim() || !form.city.trim()) return setError('Enter course name and city.');
+    if (!form.name.trim()) return setError('Enter a course name.');
     setError(null);
     setResult(null);
-    setLooking(true);
+    setMatches(null);
+    setSearching(true);
     try {
       const data = await api.courses.lookup({ name: form.name.trim(), city: form.city.trim(), state: form.state.trim() });
-      setResult(data);
-      setPreviewTeeIdx(0);
-      if (!data.found) setError(`Course not found on GolfLink. Try adjusting the name or city spelling.`);
+      setMatches(data.matches);
+      if (data.matches.length === 0) {
+        setError('No courses found on GolfLink. Try a different spelling or remove the city.');
+      }
     } catch (err) {
       setError(err.message);
     } finally {
-      setLooking(false);
+      setSearching(false);
+    }
+  }
+
+  async function pickMatch(m) {
+    setError(null);
+    setResult(null);
+    setLoadingMatch(m.url);
+    setPreviewTeeIdx(0);
+    try {
+      const data = await api.courses.fetchScorecard({ url: m.url, name: m.name, city: m.city, state: m.state });
+      if (!data.found) {
+        setError('GolfLink has this course listed but no scorecard data is available.');
+      } else {
+        setResult(data);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingMatch(null);
     }
   }
 
@@ -57,16 +80,16 @@ export default function AddCourse() {
 
       {/* Search form */}
       <div className="card space-y-3">
-        <p className="text-sm text-gray-500">Enter the course name and city — the app will look up the full scorecard automatically.</p>
-        <form onSubmit={lookup} className="space-y-3">
+        <p className="text-sm text-gray-500">Enter the course name (and optionally a city) — pick the right course from the search results.</p>
+        <form onSubmit={search} className="space-y-3">
           <div>
             <label className="label">Course name</label>
-            <input className="input" placeholder="Pebble Beach Golf Links"
+            <input className="input" placeholder="Pebble Beach"
               value={form.name} onChange={e => set('name', e.target.value)} />
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-2">
-              <label className="label">City</label>
+              <label className="label">City (optional)</label>
               <input className="input" placeholder="Pebble Beach"
                 value={form.city} onChange={e => set('city', e.target.value)} />
             </div>
@@ -76,13 +99,37 @@ export default function AddCourse() {
                 value={form.state} onChange={e => set('state', e.target.value.toUpperCase())} />
             </div>
           </div>
-          <button type="submit" disabled={looking} className="btn-primary w-full">
-            {looking ? 'Looking up…' : 'Look up scorecard'}
+          <button type="submit" disabled={searching} className="btn-primary w-full">
+            {searching ? 'Searching…' : 'Search GolfLink'}
           </button>
         </form>
       </div>
 
       {error && <p className="text-red-600 text-sm px-1">{error}</p>}
+
+      {/* Search matches */}
+      {matches && matches.length > 0 && !result && (
+        <div className="card space-y-2">
+          <p className="text-sm text-gray-500 mb-1">
+            {matches.length} match{matches.length > 1 ? 'es' : ''} found — tap to load the scorecard.
+          </p>
+          {matches.map((m, i) => {
+            const isLoading = loadingMatch === m.url;
+            return (
+              <button
+                key={i}
+                onClick={() => pickMatch(m)}
+                disabled={!!loadingMatch}
+                className="w-full text-left p-3 rounded-lg border border-gray-200 hover:border-green-500 hover:bg-green-50 transition-colors disabled:opacity-50"
+              >
+                <div className="font-semibold text-gray-900">{m.name}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{m.city}, {m.state}</div>
+                {isLoading && <div className="text-xs text-green-600 mt-1">Loading scorecard…</div>}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Results */}
       {result?.found && !saved && (
@@ -151,7 +198,7 @@ export default function AddCourse() {
           <p className="font-semibold text-gray-900">{result.name} saved!</p>
           <p className="text-sm text-gray-400">It will now appear in the course picker when starting a new round.</p>
           <div className="flex gap-2 justify-center pt-2">
-            <button onClick={() => { setResult(null); setSaved(false); setForm({ name: '', city: '', state: 'CA' }); }}
+            <button onClick={() => { setResult(null); setMatches(null); setSaved(false); setForm({ name: '', city: '', state: 'CA' }); }}
               className="btn-secondary">
               Add another
             </button>

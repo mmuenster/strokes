@@ -17,6 +17,7 @@ export const api = {
     list: () => req('GET', '/courses'),
     get: (id) => req('GET', `/courses/${id}`),
     lookup: (body) => req('POST', '/courses/lookup', body),
+    fetchScorecard: (body) => req('POST', '/courses/fetch-scorecard', body),
     create: (body) => req('POST', '/courses', body),
   },
   rounds: {

@@ -28,35 +28,82 @@ router.get('/:id', async (req, res) => {
   res.json({ ...course, tees });
 });
 
-// POST /api/courses/lookup — fetch scorecard from golflink
+const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const GOLFLINK = 'http://www.golflink.com';
+
+// POST /api/courses/lookup — search golflink autocomplete for matching courses
 router.post('/lookup', async (req, res) => {
   const { name, city, state } = req.body;
-  if (!name?.trim() || !city?.trim() || !state?.trim())
-    return res.status(400).json({ error: 'name, city, and state required' });
+  if (!name?.trim()) return res.status(400).json({ error: 'name required' });
 
-  const slug = (s) => s.toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .trim()
-    .replace(/\s+/g, '-');
+  // Search by name only — combining with city makes GolfLink's autocomplete too strict.
+  // City/state are used to rank results below.
+  const apiUrl = `${GOLFLINK}/default.aspx?action=course&q=${encodeURIComponent(name.trim())}&includeviewmore=1`;
 
-  const url = `http://www.golflink.com/golf-courses/${state.toLowerCase()}/${slug(city)}/${slug(name)}`;
-
-  let html;
+  let raw;
   try {
-    const r = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-      redirect: 'follow',
-    });
-    if (!r.ok) return res.json({ found: false, url });
-    html = await r.text();
+    const r = await fetch(apiUrl, { headers: { 'User-Agent': UA, 'Referer': `${GOLFLINK}/` } });
+    if (!r.ok) return res.status(502).json({ error: `GolfLink search returned ${r.status}` });
+    raw = await r.text();
   } catch (e) {
-    return res.status(502).json({ error: 'Failed to fetch course data', detail: e.message });
+    return res.status(502).json({ error: 'Failed to reach GolfLink', detail: e.message });
   }
 
-  const parsed = parseScorecard(html, name.trim(), city.trim(), state.trim());
-  if (!parsed) return res.json({ found: false, url });
+  // Response is wrapped in ( ... ) — JSONP without callback
+  let results;
+  try {
+    const jsonText = raw.replace(/^\s*\(/, '').replace(/\)\s*$/, '');
+    results = JSON.parse(jsonText);
+  } catch {
+    return res.status(502).json({ error: 'Could not parse GolfLink response' });
+  }
 
-  res.json({ found: true, ...parsed, url });
+  // Keep only real course results
+  const matches = results
+    .filter(r => r.category === 'Courses' && r.id !== 'no-results' && r.linkurl)
+    .map(r => {
+      // label format: "Course Name, City, ST, Country"
+      const parts = r.label.split(',').map(s => s.trim());
+      const matchState = parts[parts.length - 2] ?? '';
+      const matchCity  = parts[parts.length - 3] ?? '';
+      const matchName  = parts.slice(0, parts.length - 3).join(', ');
+      return { name: matchName, city: matchCity, state: matchState, url: r.linkurl };
+    });
+
+  // Rank: exact city match → state match → everything else.
+  const wantCity = city?.trim().toLowerCase();
+  const wantState = state?.trim().toUpperCase();
+  const score = (m) => {
+    let s = 0;
+    if (wantCity && m.city.toLowerCase() === wantCity) s += 2;
+    if (wantState && m.state.toUpperCase() === wantState) s += 1;
+    return s;
+  };
+  const ordered = [...matches].sort((a, b) => score(b) - score(a));
+
+  res.json({ matches: ordered });
+});
+
+// POST /api/courses/fetch-scorecard — load a specific golflink page and parse its scorecard
+router.post('/fetch-scorecard', async (req, res) => {
+  const { url, name, city, state } = req.body;
+  if (!url?.startsWith('/golf-courses/'))
+    return res.status(400).json({ error: 'invalid url' });
+
+  const fullUrl = `${GOLFLINK}${url}`;
+  let html;
+  try {
+    const r = await fetch(fullUrl, { headers: { 'User-Agent': UA }, redirect: 'follow' });
+    if (!r.ok) return res.json({ found: false, url: fullUrl });
+    html = await r.text();
+  } catch (e) {
+    return res.status(502).json({ error: 'Failed to fetch scorecard', detail: e.message });
+  }
+
+  const parsed = parseScorecard(html, name?.trim() || '', city?.trim() || '', state?.trim() || '');
+  if (!parsed) return res.json({ found: false, url: fullUrl });
+
+  res.json({ found: true, ...parsed, url: fullUrl });
 });
 
 // POST /api/courses — save a course (from lookup or manual)
