@@ -87,17 +87,31 @@ async function init() {
   await seedCourses();
 }
 
-async function seedCourses() {
-  const existing = await pool.query('SELECT COUNT(*) FROM courses');
-  if (parseInt(existing.rows[0].count) > 0) return;
+async function seedCourse(name, city, state, tees) {
+  const existing = await pool.query('SELECT id FROM courses WHERE name = $1 AND city = $2', [name, city]);
+  if (existing.rows.length > 0) return;
 
-  const pasoRobles = await pool.query(
-    "INSERT INTO courses (name, city, state) VALUES ($1, $2, $3) RETURNING id",
-    ['Paso Robles Golf Club', 'Paso Robles', 'CA']
+  const { rows: [{ id: courseId }] } = await pool.query(
+    'INSERT INTO courses (name, city, state) VALUES ($1, $2, $3) RETURNING id',
+    [name, city, state]
   );
-  const prId = pasoRobles.rows[0].id;
+  for (const tee of tees) {
+    const { rows: [{ id: teeId }] } = await pool.query(
+      'INSERT INTO course_tees (course_id, name, gender, rating, slope, total_yardage) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+      [courseId, tee.name, tee.gender, tee.rating, tee.slope, tee.total]
+    );
+    for (const h of tee.holes) {
+      await pool.query(
+        'INSERT INTO course_holes (tee_id, number, par, yardage) VALUES ($1,$2,$3,$4)',
+        [teeId, h.n, h.par, h.y]
+      );
+    }
+  }
+  console.log(`Seeded course: ${name}`);
+}
 
-  const prTees = [
+async function seedCourses() {
+  await seedCourse('Paso Robles Golf Club', 'Paso Robles', 'CA', [
     { name: 'Blue', gender: 'M', rating: 69.4, slope: 121, total: 6157,
       holes: [
         {n:1,par:5,y:489},{n:2,par:4,y:401},{n:3,par:5,y:512},{n:4,par:3,y:169},
@@ -130,29 +144,9 @@ async function seedCourses() {
         {n:13,par:3,y:115},{n:14,par:4,y:358},{n:15,par:4,y:260},{n:16,par:4,y:326},
         {n:17,par:3,y:169},{n:18,par:4,y:318},
       ]},
-  ];
+  ]);
 
-  for (const tee of prTees) {
-    const t = await pool.query(
-      'INSERT INTO course_tees (course_id, name, gender, rating, slope, total_yardage) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
-      [prId, tee.name, tee.gender, tee.rating, tee.slope, tee.total]
-    );
-    const teeId = t.rows[0].id;
-    for (const h of tee.holes) {
-      await pool.query(
-        'INSERT INTO course_holes (tee_id, number, par, yardage) VALUES ($1,$2,$3,$4)',
-        [teeId, h.n, h.par, h.y]
-      );
-    }
-  }
-
-  const hunterRanch = await pool.query(
-    "INSERT INTO courses (name, city, state) VALUES ($1, $2, $3) RETURNING id",
-    ['Hunter Ranch Golf Course', 'Paso Robles', 'CA']
-  );
-  const hrId = hunterRanch.rows[0].id;
-
-  const hrTees = [
+  await seedCourse('Hunter Ranch Golf Course', 'Paso Robles', 'CA', [
     { name: 'Blue', gender: 'M', rating: 72.1, slope: 136, total: 6681,
       holes: [
         {n:1,par:4,y:403},{n:2,par:4,y:426},{n:3,par:3,y:194},{n:4,par:4,y:397},
@@ -193,21 +187,7 @@ async function seedCourses() {
         {n:13,par:4,y:343},{n:14,par:3,y:141},{n:15,par:5,y:471},{n:16,par:3,y:120},
         {n:17,par:5,y:492},{n:18,par:4,y:352},
       ]},
-  ];
-
-  for (const tee of hrTees) {
-    const t = await pool.query(
-      'INSERT INTO course_tees (course_id, name, gender, rating, slope, total_yardage) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
-      [hrId, tee.name, tee.gender, tee.rating, tee.slope, tee.total]
-    );
-    const teeId = t.rows[0].id;
-    for (const h of tee.holes) {
-      await pool.query(
-        'INSERT INTO course_holes (tee_id, number, par, yardage) VALUES ($1,$2,$3,$4)',
-        [teeId, h.n, h.par, h.y]
-      );
-    }
-  }
+  ]);
 }
 
 if (!process.env.DATABASE_URL) {
@@ -217,6 +197,12 @@ if (!process.env.DATABASE_URL) {
 
 try {
   await init();
+  const [rounds, courses, shots] = await Promise.all([
+    pool.query('SELECT COUNT(*) FROM rounds'),
+    pool.query('SELECT COUNT(*) FROM courses'),
+    pool.query('SELECT COUNT(*) FROM shots'),
+  ]);
+  console.log(`DB ready — ${rounds.rows[0].count} rounds, ${courses.rows[0].count} courses, ${shots.rows[0].count} shots`);
 } catch (err) {
   console.error('ERROR: Failed to connect to database:', err.message);
   console.error('Check that DATABASE_URL is correct and the database is reachable.');
