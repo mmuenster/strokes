@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../api.js';
 import RoundForm from '../components/RoundForm.jsx';
 import { fmtSG, sgClass, CAT_COLORS } from '../utils.js';
@@ -46,7 +46,10 @@ export default function Home() {
   return (
     <div className={`max-w-lg mx-auto px-4 py-6 space-y-6 ${selecting && selectedIds.size > 0 ? 'pb-24' : ''}`}>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Strokes Gained</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Strokes Gained</h1>
+          <Link to="/courses/new" className="text-xs text-green-600 hover:underline">+ Add course</Link>
+        </div>
         <div className="flex gap-2">
           {!selecting ? (
             <>

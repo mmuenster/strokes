@@ -16,6 +16,8 @@ export const api = {
   courses: {
     list: () => req('GET', '/courses'),
     get: (id) => req('GET', `/courses/${id}`),
+    lookup: (body) => req('POST', '/courses/lookup', body),
+    create: (body) => req('POST', '/courses', body),
   },
   rounds: {
     list: () => req('GET', '/rounds'),
