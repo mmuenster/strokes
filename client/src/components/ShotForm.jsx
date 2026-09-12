@@ -2,16 +2,21 @@ import { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import { END_LIES, LIE_LABELS, CAT_LABELS, CAT_COLORS, isPuttLie, feetToYards, fmtDist } from '../utils.js';
 
+// Mirrors server/sg.js::autoCategory — keep in sync.
+// FRINGE is treated identically to GREEN throughout (see getCurve in
+// server/baseline.js and isPuttLie below) — a shot from the fringe is
+// scored against the putting baseline, entered/displayed in feet, and
+// categorized as a putt, the same as one from the green.
 function autoCategory(sequence, lieStart, distYards, holePar) {
   if (sequence === 1 && lieStart === 'TEE' && holePar >= 4) return 'OTT';
-  if (lieStart === 'GREEN') return 'PUTT';
+  if (lieStart === 'GREEN' || lieStart === 'FRINGE') return 'PUTT';
   if (distYards <= 30 && lieStart !== 'TEE') return 'ARG';
   return 'APP';
 }
 
 function defaultEndLie(previousShot) {
   if (!previousShot) return 'FAIRWAY';
-  if (previousShot.lie_end === 'GREEN') return 'GREEN';
+  if (isPuttLie(previousShot.lie_end)) return 'GREEN';
   return 'FAIRWAY';
 }
 

@@ -22,9 +22,15 @@ describe('autoCategory', () => {
     expect(autoCategory(2, 'GREEN', 33, 4)).toBe('PUTT');
   });
 
-  it('tags a short non-tee, non-green shot as ARG', () => {
-    expect(autoCategory(2, 'FRINGE', 5, 4)).toBe('ARG');
+  it('tags any shot starting on the fringe as PUTT too, matching GREEN', () => {
+    expect(autoCategory(2, 'FRINGE', 0.333, 4)).toBe('PUTT');
+    expect(autoCategory(2, 'FRINGE', 5, 4)).toBe('PUTT');
+    expect(autoCategory(2, 'FRINGE', 33, 4)).toBe('PUTT');
+  });
+
+  it('tags a short non-tee, non-green/fringe shot as ARG', () => {
     expect(autoCategory(2, 'ROUGH', 30, 4)).toBe('ARG');
+    expect(autoCategory(2, 'SAND', 10, 4)).toBe('ARG');
   });
 
   it('tags a long non-tee shot as APP', () => {

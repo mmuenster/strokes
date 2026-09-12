@@ -71,6 +71,31 @@ describe('ShotForm — continuation shot (a putt)', () => {
   });
 });
 
+describe('ShotForm — fringe treated like green', () => {
+  // The previous shot ended on the fringe, 5ft (1.667yd) from the hole.
+  const previousShot = { id: 1, sequence: 1, lie_end: 'FRINGE', dist_end: 5 / 3 };
+
+  it('previews the next shot as Putting, and defaults its own end location to Green', () => {
+    render(<ShotForm hole={hole} previousShot={previousShot} onSaved={vi.fn()} />);
+    expect(screen.getByText('Putting')).toBeInTheDocument();
+    // The "Green" end-location button should already be the active choice.
+    expect(screen.getByText('Green')).toHaveClass('bg-gray-700');
+  });
+
+  it('enters the ending distance in feet, matching a green-to-green putt', async () => {
+    render(<ShotForm hole={hole} previousShot={previousShot} onSaved={vi.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText('e.g. 8'), { target: { value: '3' } });
+    fireEvent.click(screen.getByText('Save shot'));
+
+    await waitFor(() => expect(api.shots.create).toHaveBeenCalledTimes(1));
+    const [, payload] = api.shots.create.mock.calls[0];
+    expect(payload.dist_start).toBeCloseTo(5 / 3, 6);
+    expect(payload.lie_start).toBe('FRINGE');
+    expect(payload.dist_end).toBeCloseTo(3 / 3, 6);
+  });
+});
+
 describe('ShotForm — OB penalty', () => {
   const previousShot = { id: 1, sequence: 1, lie_end: 'FAIRWAY', dist_end: 200 };
 

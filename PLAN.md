@@ -108,12 +108,16 @@ Separate baseline curves exist for:
 - **Rough:** distance in yards → expected strokes
 - **Sand:** distance in yards → expected strokes
 - **Recovery:** distance in yards → expected strokes
-- **Fringe/Tee:** mapped to Fairway baseline
+- **Fringe:** mapped to the Green (putting) baseline — a ball on the fringe is
+  treated the same as one on the green throughout (baseline, category, and
+  feet-vs-yards display), since being just off the green is close enough to
+  puttable that it's not meaningfully different for expected-strokes purposes.
+- **Tee:** mapped to Fairway baseline
 - **OB/Hazard:** treated as PENALTY category, not run through the baseline the same way as scoring shots
 
 Auto-categorization rules (`server/sg.js::autoCategory`, priority OTT → PUTT → ARG → APP):
 - Shot from TEE on a par 4 or par 5, sequence 1 → OTT
-- Shot from GREEN → PUTT
+- Shot from GREEN or FRINGE → PUTT
 - Shot within 30 yards (not from TEE) → ARG
 - All other shots → APP
 
