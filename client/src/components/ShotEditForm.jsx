@@ -56,12 +56,17 @@ export default function ShotEditForm({ shot, hole, isFirstShot, onSaved, onCance
     setError(null);
     try {
       const payload = {
-        dist_start: distStartYards,
-        lie_start: lieStart,
         holed: holed ? 1 : 0,
         dist_end: holed ? null : lieEnd === 'OB' ? distStartYards : distEndYards,
         lie_end: holed ? null : lieEnd,
       };
+      // Only the first shot's starting distance is editable here — for
+      // continuation shots dist_start is linked to the previous shot's
+      // dist_end and must not be overwritten with a rounded round-trip value.
+      if (isFirstShot) {
+        payload.dist_start = distStartYards;
+        payload.lie_start = lieStart;
+      }
       const updated = await api.shots.update(shot.id, payload);
       onSaved(updated);
     } catch (err) {
