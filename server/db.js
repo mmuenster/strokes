@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { autoCategory, shotSG } from './sg.js';
 
 const { Pool } = pg;
 
@@ -21,6 +22,34 @@ export async function query(sql, params) {
 export async function queryOne(sql, params) {
   const rows = await query(sql, params);
   return rows[0] ?? null;
+}
+
+// Recompute stored SG (and tee-shot categories) from the current baseline.
+// Pass a roundId to limit it to one round, e.g. after its profile changes.
+// Only rows whose values actually change are written.
+export async function recomputeShotSG(roundId = null) {
+  const { rows } = await pool.query(`
+    SELECT s.*, h.par, r.profile
+    FROM shots s
+    JOIN holes h ON h.id = s.hole_id
+    JOIN rounds r ON r.id = h.round_id
+    ${roundId != null ? 'WHERE r.id = $1' : ''}
+  `, roundId != null ? [roundId] : []);
+
+  let changed = 0;
+  for (const shot of rows) {
+    // Categories are auto-assigned (the client only ever sets PENALTY), so
+    // re-derive them — this fixes re-teed drives that were stored as APP.
+    const category = shot.category === 'PENALTY'
+      ? 'PENALTY'
+      : autoCategory(shot.sequence, shot.lie_start, shot.dist_start, shot.par);
+    const sg = shotSG({ ...shot, category }, shot.profile);
+    if (category !== shot.category || Math.abs(sg - shot.sg) > 1e-4) {
+      await pool.query('UPDATE shots SET sg = $1, category = $2 WHERE id = $3', [sg, category, shot.id]);
+      changed++;
+    }
+  }
+  return changed;
 }
 
 async function init() {
@@ -85,6 +114,9 @@ async function init() {
   `);
 
   await seedCourses();
+
+  const changed = await recomputeShotSG();
+  if (changed) console.log(`Recomputed strokes gained for ${changed} shots`);
 }
 
 async function seedCourse(name, city, state, tees) {

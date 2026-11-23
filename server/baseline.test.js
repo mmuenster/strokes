@@ -7,22 +7,44 @@ describe('getExpectedStrokes', () => {
   });
 
   it('returns an exact table value at a known putting distance (3 ft = 1 yd)', () => {
-    expect(getExpectedStrokes(1, 'GREEN')).toBeCloseTo(1.083, 3);
+    expect(getExpectedStrokes(1, 'GREEN')).toBeCloseTo(1.04, 3);
   });
 
   it('interpolates linearly between two known putting distances', () => {
-    // 2 ft (0.667 yd) -> 1.010, 3 ft (1.000 yd) -> 1.083. Midpoint should be the average.
-    const mid = (0.667 + 1.0) / 2;
-    const expected = (1.010 + 1.083) / 2;
-    expect(getExpectedStrokes(mid, 'GREEN')).toBeCloseTo(expected, 2);
+    // 2 ft (0.667 yd) -> 1.01, 3 ft (1.000 yd) -> 1.04. Midpoint should be the average.
+    const mid = (2 / 3 + 1.0) / 2;
+    const expected = (1.01 + 1.04) / 2;
+    expect(getExpectedStrokes(mid, 'GREEN')).toBeCloseTo(expected, 3);
   });
 
   it('clamps to the shortest putting distance below the table minimum', () => {
-    expect(getExpectedStrokes(0.05, 'GREEN')).toBeCloseTo(1.001, 3);
+    expect(getExpectedStrokes(0.05, 'GREEN')).toBeCloseTo(1.00, 3);
   });
 
   it('clamps to the longest distance above the table maximum', () => {
-    expect(getExpectedStrokes(9999, 'FAIRWAY')).toBeCloseTo(4.68, 2);
+    expect(getExpectedStrokes(9999, 'FAIRWAY')).toBeCloseTo(4.94, 2);
+  });
+
+  it('matches PGA Tour (Broadie) benchmark values for the scratch profile', () => {
+    expect(getExpectedStrokes(400, 'TEE')).toBeCloseTo(3.99, 2);
+    expect(getExpectedStrokes(160, 'TEE')).toBeCloseTo(2.99, 2);
+    expect(getExpectedStrokes(100, 'FAIRWAY')).toBeCloseTo(2.80, 2);
+    expect(getExpectedStrokes(300, 'FAIRWAY')).toBeCloseTo(3.78, 2);
+    expect(getExpectedStrokes(100, 'ROUGH')).toBeCloseTo(3.02, 2);
+    expect(getExpectedStrokes(20, 'SAND')).toBeCloseTo(2.53, 2);
+    expect(getExpectedStrokes(20 / 3, 'GREEN')).toBeCloseTo(1.87, 2); // 20 ft
+  });
+
+  it('uses a dedicated tee curve rather than the fairway curve', () => {
+    expect(getExpectedStrokes(400, 'TEE')).not.toBeCloseTo(getExpectedStrokes(400, 'FAIRWAY'), 2);
+  });
+
+  it('values short chips below the old 25-yard floor', () => {
+    // Previously everything under 25y clamped to the 25y value, which made
+    // short chips look harder than they are and inflated ARG SG.
+    expect(getExpectedStrokes(10, 'FAIRWAY')).toBeLessThan(getExpectedStrokes(25, 'FAIRWAY'));
+    expect(getExpectedStrokes(10, 'ROUGH')).toBeLessThan(getExpectedStrokes(25, 'ROUGH'));
+    expect(getExpectedStrokes(10, 'FAIRWAY')).toBeCloseTo(2.18, 2);
   });
 
   it('treats FRINGE the same as GREEN (putting curve)', () => {
@@ -45,8 +67,10 @@ describe('getExpectedStrokes', () => {
   });
 
   it('a higher handicap profile always expects more strokes than scratch', () => {
-    for (const lie of ['GREEN', 'FAIRWAY', 'ROUGH', 'SAND']) {
-      for (const dist of [5, 50, 150]) {
+    for (const lie of ['GREEN', 'TEE', 'FAIRWAY', 'ROUGH', 'SAND', 'RECOVERY']) {
+      for (const dist of [1, 5, 10, 25, 50, 100, 150, 250, 400, 550, 700]) {
+        // The tee curve starts at 100y — no real hole is shorter.
+        if (lie === 'TEE' && dist < 100) continue;
         expect(getExpectedStrokes(dist, lie, 'hdcp15')).toBeGreaterThanOrEqual(
           getExpectedStrokes(dist, lie, 'scratch')
         );

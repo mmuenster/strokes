@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { query, queryOne } from '../db.js';
+import { query, queryOne, recomputeShotSG } from '../db.js';
 
 const router = Router();
 
@@ -98,6 +98,9 @@ router.put('/:id', async (req, res) => {
     WHERE id = $5
     RETURNING *
   `, [course_name ?? null, date ?? null, notes ?? null, profile ?? null, round.id]);
+
+  // Stored SG depends on the baseline profile, so refresh it when that changes.
+  if (profile && profile !== round.profile) await recomputeShotSG(round.id);
 
   res.json(updated);
 });

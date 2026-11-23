@@ -8,7 +8,7 @@ import { END_LIES, LIE_LABELS, CAT_COLORS, isPuttLie, feetToYards, fmtDist } fro
 // scored against the putting baseline, entered/displayed in feet, and
 // categorized as a putt, the same as one from the green.
 function autoCategory(sequence, lieStart, distYards, holePar) {
-  if (sequence === 1 && lieStart === 'TEE' && holePar >= 4) return 'OTT';
+  if (lieStart === 'TEE' && holePar >= 4) return 'OTT';
   if (lieStart === 'GREEN' || lieStart === 'FRINGE') return 'PUTT';
   if (distYards <= 30 && lieStart !== 'TEE') return 'ARG';
   return 'APP';

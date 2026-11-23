@@ -138,3 +138,26 @@ describe('POST /api/holes/:holeId/shots', () => {
     expect(typeof res.body.sg).toBe('number');
   });
 });
+
+describe('penalty rows', () => {
+  it('stores a PENALTY row with 0 SG (the penalty is in the offending shot)', async () => {
+    const app = buildApp();
+    const res = await request(app)
+      .post('/api/holes/1/shots')
+      .send({ dist_start: 400, lie_start: 'TEE', dist_end: 400, lie_end: 'TEE', category: 'PENALTY' });
+    expect(res.status).toBe(201);
+    expect(res.body.sg).toBe(0);
+  });
+
+  it('keeps the PENALTY category when an edit cascades a new start position into it', async () => {
+    shots = [
+      { id: 1, hole_id: 1, sequence: 1, category: 'OTT', dist_start: 400, lie_start: 'TEE', dist_end: 400, lie_end: 'OB', holed: 0, sg: -2 },
+      { id: 2, hole_id: 1, sequence: 2, category: 'PENALTY', dist_start: 400, lie_start: 'TEE', dist_end: 400, lie_end: 'TEE', holed: 0, sg: 0 },
+    ];
+    const app = buildApp();
+    const res = await request(app).put('/api/shots/2').send({ dist_start: 410, lie_start: 'TEE' });
+    expect(res.status).toBe(200);
+    expect(res.body.category).toBe('PENALTY');
+    expect(res.body.sg).toBe(0);
+  });
+});

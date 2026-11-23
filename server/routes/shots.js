@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { query, queryOne } from '../db.js';
-import { autoCategory, computeSG } from '../sg.js';
+import { autoCategory, shotSG } from '../sg.js';
 import { validateDistance } from '../baseline.js';
 
 const router = Router({ mergeParams: true });
@@ -56,11 +56,7 @@ router.post('/', async (req, res) => {
   if (!CATS.includes(category)) return res.status(400).json({ error: 'invalid category' });
 
   const profile = await getRoundProfile(hole.id);
-  const sg = computeSG(
-    Number(dist_start), lie_start,
-    holed ? 0 : Number(dist_end), holed ? 'GREEN' : lie_end,
-    holed, profile
-  );
+  const sg = shotSG({ category, dist_start, lie_start, dist_end, lie_end, holed }, profile);
 
   try {
     const shot = await queryOne(`
@@ -97,11 +93,17 @@ router.put('/:id', async (req, res) => {
   if (!validateDistance(newDistStart)) return res.status(400).json({ error: 'invalid dist_start' });
   if (!holed && !validateDistance(newDistEnd)) return res.status(400).json({ error: 'invalid dist_end' });
 
-  const profile = await getRoundProfile(shot.hole_id);
-  const sg = computeSG(newDistStart, newLieStart, holed ? 0 : newDistEnd, holed ? 'GREEN' : newLieEnd, holed, profile);
-
   const hole = await queryOne('SELECT * FROM holes WHERE id = $1', [shot.hole_id]);
-  const newCategory = category ?? autoCategory(shot.sequence, newLieStart, newDistStart, hole.par);
+  // A PENALTY row keeps its category unless the caller explicitly changes it;
+  // otherwise re-derive (the start position may have changed).
+  const newCategory = category
+    ?? (shot.category === 'PENALTY' ? 'PENALTY' : autoCategory(shot.sequence, newLieStart, newDistStart, hole.par));
+
+  const profile = await getRoundProfile(shot.hole_id);
+  const sg = shotSG({
+    category: newCategory, dist_start: newDistStart, lie_start: newLieStart,
+    dist_end: newDistEnd, lie_end: newLieEnd, holed,
+  }, profile);
 
   const updated = await queryOne(`
     UPDATE shots SET

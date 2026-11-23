@@ -41,9 +41,13 @@ export default function ShotList({ shots, hole, onDeleted, onEdited }) {
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${colors.bg} ${colors.text}`}>
                     {shot.category}
                   </span>
-                  <span className={`text-base font-bold ${sgClass(shot.sg)}`}>
-                    {fmtSG(shot.sg)}
-                  </span>
+                  {shot.category === 'PENALTY' ? (
+                    <span className="text-xs text-gray-400">SG charged to shot {shot.sequence - 1}</span>
+                  ) : (
+                    <span className={`text-base font-bold ${sgClass(shot.sg)}`}>
+                      {fmtSG(shot.sg)}
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-gray-500">
                   {shot.category === 'PENALTY'
